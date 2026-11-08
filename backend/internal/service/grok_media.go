@@ -41,11 +41,11 @@ func (e GrokMediaEndpoint) RequiresRequestBody() bool {
 }
 
 func (e GrokMediaEndpoint) IsVideoLookupRequest() bool {
-	return e == GrokMediaEndpointVideoStatus || e == GrokMediaEndpointVideoContent || e == SeedanceEndpointStatus || e == SeedanceEndpointDelete
+	return e == GrokMediaEndpointVideoStatus || e == GrokMediaEndpointVideoContent || e == SeedanceEndpointStatus || e == SeedanceEndpointDelete || e == BailianEndpointStatus
 }
 
 func (e GrokMediaEndpoint) IsGenerationRequest() bool {
-	if e == SeedanceEndpointCreate {
+	if e == SeedanceEndpointCreate || e == BailianEndpointCreate {
 		return true
 	}
 	switch e {
@@ -377,12 +377,14 @@ func (s *OpenAIGatewayService) SelectMediaVideoRequestAccount(
 // first observes a completed video URL. Status may omit model/duration; we fall
 // back to this snapshot, then defaults.
 type GrokVideoPendingBilling struct {
-	Model                string `json:"model"`
-	BillingModel         string `json:"billing_model,omitempty"`
-	UpstreamModel        string `json:"upstream_model,omitempty"`
-	VideoResolution      string `json:"video_resolution,omitempty"`
-	VideoDurationSeconds int    `json:"video_duration_seconds,omitempty"`
-	OriginalModel        string `json:"original_model,omitempty"`
+	Platform             string                       `json:"platform,omitempty"`
+	Model                string                       `json:"model"`
+	BillingModel         string                       `json:"billing_model,omitempty"`
+	UpstreamModel        string                       `json:"upstream_model,omitempty"`
+	VideoResolution      string                       `json:"video_resolution,omitempty"`
+	VideoDurationSeconds int                          `json:"video_duration_seconds,omitempty"`
+	OriginalModel        string                       `json:"original_model,omitempty"`
+	BailianPricing       *BailianVideoPricingSnapshot `json:"bailian_pricing,omitempty"`
 	// CreatedAt is when the gateway accepted the async create (RFC3339Nano UTC).
 	// duration_ms for deferred billing is measured from this instant until the
 	// first official done+video.url observation (status poll or content download),
@@ -462,7 +464,7 @@ func (s *OpenAIGatewayService) StoreGrokVideoPendingBilling(
 	if pending.VideoResolution != "" {
 		pending.VideoResolution = NormalizeVideoBillingResolutionOrDefault(pending.VideoResolution)
 	}
-	if pending.VideoDurationSeconds > 0 {
+	if pending.VideoDurationSeconds > 0 && pending.Platform != PlatformBailian {
 		pending.VideoDurationSeconds = NormalizeVideoBillingDurationSecondsOrDefault(pending.VideoDurationSeconds)
 	}
 	// Always stamp create-accept time when missing so deferred duration_ms is E2E.

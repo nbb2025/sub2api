@@ -17,6 +17,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/ent/usagelog"
 	"github.com/Wei-Shaw/sub2api/ent/user"
 	"github.com/Wei-Shaw/sub2api/ent/usersubscription"
+	"github.com/Wei-Shaw/sub2api/internal/domain"
 )
 
 // UsageLogUpdate is the builder for updating UsageLog entities.
@@ -933,6 +934,18 @@ func (_u *UsageLogUpdate) ClearVideoDurationSeconds() *UsageLogUpdate {
 	return _u
 }
 
+// SetVideoUsage sets the "video_usage" field.
+func (_u *UsageLogUpdate) SetVideoUsage(v *domain.VideoUsage) *UsageLogUpdate {
+	_u.mutation.SetVideoUsage(v)
+	return _u
+}
+
+// ClearVideoUsage clears the value of the "video_usage" field.
+func (_u *UsageLogUpdate) ClearVideoUsage() *UsageLogUpdate {
+	_u.mutation.ClearVideoUsage()
+	return _u
+}
+
 // SetCacheTTLOverridden sets the "cache_ttl_overridden" field.
 func (_u *UsageLogUpdate) SetCacheTTLOverridden(v bool) *UsageLogUpdate {
 	_u.mutation.SetCacheTTLOverridden(v)
@@ -1377,6 +1390,12 @@ func (_u *UsageLogUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 	}
 	if _u.mutation.VideoDurationSecondsCleared() {
 		_spec.ClearField(usagelog.FieldVideoDurationSeconds, field.TypeInt)
+	}
+	if value, ok := _u.mutation.VideoUsage(); ok {
+		_spec.SetField(usagelog.FieldVideoUsage, field.TypeJSON, value)
+	}
+	if _u.mutation.VideoUsageCleared() {
+		_spec.ClearField(usagelog.FieldVideoUsage, field.TypeJSON)
 	}
 	if value, ok := _u.mutation.CacheTTLOverridden(); ok {
 		_spec.SetField(usagelog.FieldCacheTTLOverridden, field.TypeBool, value)
@@ -2447,6 +2466,18 @@ func (_u *UsageLogUpdateOne) ClearVideoDurationSeconds() *UsageLogUpdateOne {
 	return _u
 }
 
+// SetVideoUsage sets the "video_usage" field.
+func (_u *UsageLogUpdateOne) SetVideoUsage(v *domain.VideoUsage) *UsageLogUpdateOne {
+	_u.mutation.SetVideoUsage(v)
+	return _u
+}
+
+// ClearVideoUsage clears the value of the "video_usage" field.
+func (_u *UsageLogUpdateOne) ClearVideoUsage() *UsageLogUpdateOne {
+	_u.mutation.ClearVideoUsage()
+	return _u
+}
+
 // SetCacheTTLOverridden sets the "cache_ttl_overridden" field.
 func (_u *UsageLogUpdateOne) SetCacheTTLOverridden(v bool) *UsageLogUpdateOne {
 	_u.mutation.SetCacheTTLOverridden(v)
@@ -2921,6 +2952,12 @@ func (_u *UsageLogUpdateOne) sqlSave(ctx context.Context) (_node *UsageLog, err 
 	}
 	if _u.mutation.VideoDurationSecondsCleared() {
 		_spec.ClearField(usagelog.FieldVideoDurationSeconds, field.TypeInt)
+	}
+	if value, ok := _u.mutation.VideoUsage(); ok {
+		_spec.SetField(usagelog.FieldVideoUsage, field.TypeJSON, value)
+	}
+	if _u.mutation.VideoUsageCleared() {
+		_spec.ClearField(usagelog.FieldVideoUsage, field.TypeJSON)
 	}
 	if value, ok := _u.mutation.CacheTTLOverridden(); ok {
 		_spec.SetField(usagelog.FieldCacheTTLOverridden, field.TypeBool, value)

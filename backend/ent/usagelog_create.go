@@ -17,6 +17,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/ent/usagelog"
 	"github.com/Wei-Shaw/sub2api/ent/user"
 	"github.com/Wei-Shaw/sub2api/ent/usersubscription"
+	"github.com/Wei-Shaw/sub2api/internal/domain"
 )
 
 // UsageLogCreate is the builder for creating a UsageLog entity.
@@ -609,6 +610,12 @@ func (_c *UsageLogCreate) SetNillableVideoDurationSeconds(v *int) *UsageLogCreat
 	return _c
 }
 
+// SetVideoUsage sets the "video_usage" field.
+func (_c *UsageLogCreate) SetVideoUsage(v *domain.VideoUsage) *UsageLogCreate {
+	_c.mutation.SetVideoUsage(v)
+	return _c
+}
+
 // SetCacheTTLOverridden sets the "cache_ttl_overridden" field.
 func (_c *UsageLogCreate) SetCacheTTLOverridden(v bool) *UsageLogCreate {
 	_c.mutation.SetCacheTTLOverridden(v)
@@ -1126,6 +1133,10 @@ func (_c *UsageLogCreate) createSpec() (*UsageLog, *sqlgraph.CreateSpec) {
 	if value, ok := _c.mutation.VideoDurationSeconds(); ok {
 		_spec.SetField(usagelog.FieldVideoDurationSeconds, field.TypeInt, value)
 		_node.VideoDurationSeconds = &value
+	}
+	if value, ok := _c.mutation.VideoUsage(); ok {
+		_spec.SetField(usagelog.FieldVideoUsage, field.TypeJSON, value)
+		_node.VideoUsage = value
 	}
 	if value, ok := _c.mutation.CacheTTLOverridden(); ok {
 		_spec.SetField(usagelog.FieldCacheTTLOverridden, field.TypeBool, value)
@@ -2067,6 +2078,24 @@ func (u *UsageLogUpsert) AddVideoDurationSeconds(v int) *UsageLogUpsert {
 // ClearVideoDurationSeconds clears the value of the "video_duration_seconds" field.
 func (u *UsageLogUpsert) ClearVideoDurationSeconds() *UsageLogUpsert {
 	u.SetNull(usagelog.FieldVideoDurationSeconds)
+	return u
+}
+
+// SetVideoUsage sets the "video_usage" field.
+func (u *UsageLogUpsert) SetVideoUsage(v *domain.VideoUsage) *UsageLogUpsert {
+	u.Set(usagelog.FieldVideoUsage, v)
+	return u
+}
+
+// UpdateVideoUsage sets the "video_usage" field to the value that was provided on create.
+func (u *UsageLogUpsert) UpdateVideoUsage() *UsageLogUpsert {
+	u.SetExcluded(usagelog.FieldVideoUsage)
+	return u
+}
+
+// ClearVideoUsage clears the value of the "video_usage" field.
+func (u *UsageLogUpsert) ClearVideoUsage() *UsageLogUpsert {
+	u.SetNull(usagelog.FieldVideoUsage)
 	return u
 }
 
@@ -3055,6 +3084,27 @@ func (u *UsageLogUpsertOne) UpdateVideoDurationSeconds() *UsageLogUpsertOne {
 func (u *UsageLogUpsertOne) ClearVideoDurationSeconds() *UsageLogUpsertOne {
 	return u.Update(func(s *UsageLogUpsert) {
 		s.ClearVideoDurationSeconds()
+	})
+}
+
+// SetVideoUsage sets the "video_usage" field.
+func (u *UsageLogUpsertOne) SetVideoUsage(v *domain.VideoUsage) *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.SetVideoUsage(v)
+	})
+}
+
+// UpdateVideoUsage sets the "video_usage" field to the value that was provided on create.
+func (u *UsageLogUpsertOne) UpdateVideoUsage() *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.UpdateVideoUsage()
+	})
+}
+
+// ClearVideoUsage clears the value of the "video_usage" field.
+func (u *UsageLogUpsertOne) ClearVideoUsage() *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.ClearVideoUsage()
 	})
 }
 
@@ -4211,6 +4261,27 @@ func (u *UsageLogUpsertBulk) UpdateVideoDurationSeconds() *UsageLogUpsertBulk {
 func (u *UsageLogUpsertBulk) ClearVideoDurationSeconds() *UsageLogUpsertBulk {
 	return u.Update(func(s *UsageLogUpsert) {
 		s.ClearVideoDurationSeconds()
+	})
+}
+
+// SetVideoUsage sets the "video_usage" field.
+func (u *UsageLogUpsertBulk) SetVideoUsage(v *domain.VideoUsage) *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.SetVideoUsage(v)
+	})
+}
+
+// UpdateVideoUsage sets the "video_usage" field to the value that was provided on create.
+func (u *UsageLogUpsertBulk) UpdateVideoUsage() *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.UpdateVideoUsage()
+	})
+}
+
+// ClearVideoUsage clears the value of the "video_usage" field.
+func (u *UsageLogUpsertBulk) ClearVideoUsage() *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.ClearVideoUsage()
 	})
 }
 

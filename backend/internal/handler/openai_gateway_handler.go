@@ -363,6 +363,9 @@ func NewOpenAIGatewayHandler(
 	opsService *service.OpsService,
 	cfg *config.Config,
 ) *OpenAIGatewayHandler {
+	if gatewayService != nil {
+		gatewayService.StartBailianVideoSettlement(apiKeyService)
+	}
 	pingInterval := time.Duration(0)
 	maxAccountSwitches := 3
 	if cfg != nil {

@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"strings"
 	"time"
+
+	"github.com/Wei-Shaw/sub2api/internal/domain"
 )
 
 const (
@@ -207,6 +209,7 @@ type UsageLog struct {
 	VideoCount           int
 	VideoResolution      *string
 	VideoDurationSeconds *int
+	VideoUsage           *domain.VideoUsage
 
 	CreatedAt time.Time
 

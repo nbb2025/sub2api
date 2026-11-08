@@ -31,6 +31,8 @@ const (
 	EndpointVideosExtensions     = "/v1/videos/extensions"
 	EndpointVideos               = "/v1/videos"
 	EndpointSeedanceTasks        = "/api/v3/contents/generations/tasks"
+	EndpointBailianVideoCreate   = service.BailianVideoCreatePath
+	EndpointBailianTasks         = "/api/v1/tasks"
 	EndpointGeminiModels         = "/v1beta/models"
 	EndpointGeminiCachedContents = "/v1beta/cachedContents"
 )
@@ -85,6 +87,10 @@ const (
 func NormalizeInboundEndpoint(path string) string {
 	path = strings.TrimSpace(path)
 	switch {
+	case path == EndpointBailianVideoCreate:
+		return EndpointBailianVideoCreate
+	case isBareOrSubpathOf(path, EndpointBailianTasks):
+		return EndpointBailianTasks
 	case strings.Contains(path, "/contents/generations/tasks"):
 		return EndpointSeedanceTasks
 	case strings.Contains(path, EndpointResponsesInputTokens) || isResponsesInputTokensAliasPath(path):
@@ -206,6 +212,8 @@ func DeriveUpstreamEndpoint(inbound, rawRequestPath, platform string) string {
 	inbound = strings.TrimSpace(inbound)
 
 	switch platform {
+	case service.PlatformBailian:
+		return inbound
 	case service.PlatformOpenAI, service.PlatformGrok:
 		if inbound == EndpointEmbeddings || inbound == EndpointAlphaSearch || inbound == EndpointResponsesInputTokens || inbound == EndpointImagesGenerations || inbound == EndpointImagesEdits || inbound == EndpointVideosGenerations || inbound == EndpointVideosEdits || inbound == EndpointVideosExtensions || inbound == EndpointVideos {
 			return inbound

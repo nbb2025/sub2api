@@ -4,6 +4,8 @@ package schema
 import (
 	"time"
 
+	"github.com/Wei-Shaw/sub2api/internal/domain"
+
 	"entgo.io/ent"
 	"entgo.io/ent/dialect"
 	"entgo.io/ent/dialect/entsql"
@@ -177,6 +179,9 @@ func (UsageLog) Fields() []ent.Field {
 			Optional().
 			Nillable().
 			Comment("提交时请求的视频时长（秒），按秒计费的乘数"),
+		field.JSON("video_usage", &domain.VideoUsage{}).
+			Optional().
+			SchemaType(map[string]string{dialect.Postgres: "jsonb"}),
 		// Cache TTL Override 标记（管理员强制替换了缓存 TTL 计费）
 		field.Bool("cache_ttl_overridden").
 			Default(false),

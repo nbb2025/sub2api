@@ -594,6 +594,24 @@ type BatchUpdateRedeemCodesRequest struct {
 }
 
 // UsageLog 是普通用户接口使用的 usage log DTO（不包含管理员字段）。
+// VideoUsage uses decimal strings on the management API so JavaScript cannot
+// round supplier seconds while parsing JSON. Native DashScope responses retain
+// their original JSON numbers; the database retains exact JSONB numbers.
+type VideoUsage struct {
+	Provider            string `json:"provider"`
+	InputVideoDuration  string `json:"input_video_duration"`
+	OutputVideoDuration string `json:"output_video_duration"`
+	Duration            string `json:"duration"`
+	Resolution          string `json:"resolution"`
+}
+
+func videoUsageDTO(usage *domain.VideoUsage) *VideoUsage {
+	if usage == nil {
+		return nil
+	}
+	return &VideoUsage{Provider: usage.Provider, InputVideoDuration: usage.InputVideoDuration.String(), OutputVideoDuration: usage.OutputVideoDuration.String(), Duration: usage.Duration.String(), Resolution: usage.Resolution}
+}
+
 type UsageLog struct {
 	ID        int64  `json:"id"`
 	UserID    int64  `json:"user_id"`
@@ -643,17 +661,21 @@ type UsageLog struct {
 	FirstTokenMs       *int `json:"first_token_ms"`
 
 	// 图片生成字段
-	ImageCount         int            `json:"image_count"`
-	ImageSize          *string        `json:"image_size"`
-	ImageInputSize     *string        `json:"image_input_size"`
-	ImageOutputSize    *string        `json:"image_output_size"`
-	ImageInputTokens   int            `json:"image_input_tokens"`
-	ImageInputCost     float64        `json:"image_input_cost"`
-	ImageOutputTokens  int            `json:"image_output_tokens"`
-	ImageOutputCost    float64        `json:"image_output_cost"`
-	ImageSizeSource    *string        `json:"image_size_source"`
-	ImageSizeBreakdown map[string]int `json:"image_size_breakdown"`
-	MediaType          *string        `json:"media_type"`
+	ImageCount           int            `json:"image_count"`
+	ImageSize            *string        `json:"image_size"`
+	ImageInputSize       *string        `json:"image_input_size"`
+	ImageOutputSize      *string        `json:"image_output_size"`
+	ImageInputTokens     int            `json:"image_input_tokens"`
+	ImageInputCost       float64        `json:"image_input_cost"`
+	ImageOutputTokens    int            `json:"image_output_tokens"`
+	ImageOutputCost      float64        `json:"image_output_cost"`
+	ImageSizeSource      *string        `json:"image_size_source"`
+	ImageSizeBreakdown   map[string]int `json:"image_size_breakdown"`
+	MediaType            *string        `json:"media_type"`
+	VideoCount           int            `json:"video_count,omitempty"`
+	VideoResolution      *string        `json:"video_resolution,omitempty"`
+	VideoDurationSeconds *int           `json:"video_duration_seconds,omitempty"`
+	VideoUsage           *VideoUsage    `json:"video_usage,omitempty"`
 
 	// User-Agent
 	UserAgent *string `json:"user_agent"`

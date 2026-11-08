@@ -197,6 +197,8 @@ Sub2API is an AI API gateway platform designed to distribute and manage API quot
 
 ## Features
 
+- **Alibaba Cloud Bailian / Wan 3**: a dedicated `bailian` platform with native multimodal video tasks, 30-second and smart duration, editing/extension, decimal input-plus-output billing, and durable charge deduplication. See the [integration and billing guide](docs/bailian-wan-video.md).
+
 - **Multi-Account Management** - Support multiple upstream account types (OAuth, API Key)
 - **API Key Distribution** - Generate and manage API Keys for users
 - **Precise Billing** - Token-level usage tracking and cost calculation

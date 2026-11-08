@@ -165,9 +165,39 @@ func (s *OpenAIGatewayService) RecordUsage(ctx context.Context, input *OpenAIRec
 	}
 
 	apiKey := input.APIKey
+	if result.VideoUsage != nil && result.BailianVideoPricing != nil && apiKey != nil {
+		copy := *apiKey
+		copy.Quota = result.BailianVideoPricing.KeyQuota
+		copy.RateLimit5h = result.BailianVideoPricing.KeyRateLimit5h
+		copy.RateLimit1d = result.BailianVideoPricing.KeyRateLimit1d
+		copy.RateLimit7d = result.BailianVideoPricing.KeyRateLimit7d
+		apiKey = &copy
+	}
 	user := input.User
 	account := input.Account
+	if result.VideoUsage != nil && result.BailianVideoPricing != nil && account != nil {
+		copy := *account
+		copy.Extra = make(map[string]any, len(account.Extra)+3)
+		for key, value := range account.Extra {
+			copy.Extra[key] = value
+		}
+		copy.Extra["quota_limit"] = result.BailianVideoPricing.AccountQuotaLimit
+		copy.Extra["quota_daily_limit"] = result.BailianVideoPricing.AccountDailyLimit
+		copy.Extra["quota_weekly_limit"] = result.BailianVideoPricing.AccountWeeklyLimit
+		account = &copy
+	}
 	subscription := input.Subscription
+	if result.VideoUsage != nil && result.BailianVideoPricing != nil {
+		// Settle against the subscription that admitted this job, including a
+		// task completing after that subscription expired or was replaced.
+		subscription = nil
+		if id := result.BailianVideoPricing.SubscriptionID; id != nil {
+			subscription = &UserSubscription{ID: *id, UserID: user.ID}
+			if apiKey.GroupID != nil {
+				subscription.GroupID = *apiKey.GroupID
+			}
+		}
+	}
 	billingAccount, err := resolveCredentialAccount(ctx, s.accountRepo, account)
 	if err != nil {
 		return err
@@ -211,6 +241,9 @@ func (s *OpenAIGatewayService) RecordUsage(ctx context.Context, input *OpenAIRec
 	pricingAt := openAIUsagePricingAt(input)
 	multiplier, imageMultiplier := computePeakAwareMultipliers(apiKey, baseMultiplier, pricingAt)
 	videoMultiplier := resolveVideoRateMultiplier(apiKey, baseMultiplier)
+	if result.VideoUsage != nil && result.BailianVideoPricing != nil {
+		videoMultiplier = result.BailianVideoPricing.RateMultiplier
+	}
 
 	var cost *CostBreakdown
 	billingModel := forwardResultBillingModel(result.Model, result.UpstreamModel)
@@ -330,6 +363,9 @@ func (s *OpenAIGatewayService) RecordUsage(ctx context.Context, input *OpenAIRec
 
 	// Determine billing type
 	isSubscriptionBilling := subscription != nil && apiKey.Group != nil && apiKey.Group.IsSubscriptionType()
+	if result.VideoUsage != nil && result.BailianVideoPricing != nil {
+		isSubscriptionBilling = result.BailianVideoPricing.SubscriptionID != nil
+	}
 	billingType := BillingTypeBalance
 	if isSubscriptionBilling {
 		billingType = BillingTypeSubscription
@@ -338,6 +374,9 @@ func (s *OpenAIGatewayService) RecordUsage(ctx context.Context, input *OpenAIRec
 	// Create usage log
 	durationMs := int(result.Duration.Milliseconds())
 	accountRateMultiplier := account.BillingRateMultiplier()
+	if result.VideoUsage != nil && result.BailianVideoPricing != nil {
+		accountRateMultiplier = result.BailianVideoPricing.AccountRateMultiplier
+	}
 	requestID := resolveUsageBillingRequestID(ctx, result.RequestID)
 	if result.OpenAIWSMode {
 		if upstreamRequestID := strings.TrimSpace(result.RequestID); upstreamRequestID != "" {
@@ -415,8 +454,12 @@ func (s *OpenAIGatewayService) RecordUsage(ctx context.Context, input *OpenAIRec
 	if isVideoUsage {
 		usageLog.VideoCount = result.VideoCount
 		usageLog.VideoResolution = optionalTrimmedStringPtr(NormalizeVideoBillingResolutionOrDefault(result.VideoResolution))
-		videoDurationSeconds := NormalizeVideoBillingDurationSecondsOrDefault(result.VideoDurationSeconds)
-		usageLog.VideoDurationSeconds = &videoDurationSeconds
+		if result.VideoUsage != nil {
+			usageLog.VideoUsage = result.VideoUsage
+		} else {
+			videoDurationSeconds := NormalizeVideoBillingDurationSecondsOrDefault(result.VideoDurationSeconds)
+			usageLog.VideoDurationSeconds = &videoDurationSeconds
+		}
 	}
 	if cost != nil {
 		usageLog.InputCost = cost.InputCost
@@ -494,6 +537,16 @@ func (s *OpenAIGatewayService) RecordUsage(ctx context.Context, input *OpenAIRec
 
 	simpleModeKeyRateLimitOnly := simpleModeKeyRateLimitBillingEnabled(s.cfg, apiKey)
 	if s.cfg != nil && s.cfg.RunMode == config.RunModeSimple && !simpleModeKeyRateLimitOnly {
+		if result.VideoUsage != nil && result.VideoUsage.Provider == PlatformBailian {
+			if s.usageLogRepo == nil {
+				return errors.New("Bailian usage repository is unavailable")
+			}
+			_, err := s.usageLogRepo.Create(ctx, usageLog)
+			if err == nil {
+				s.deferredService.ScheduleLastUsedUpdate(account.ID)
+			}
+			return err
+		}
 		writeUsageLogBestEffort(ctx, s.usageLogRepo, usageLog, "service.openai_gateway")
 		logger.LegacyPrintf("service.openai_gateway", "[SIMPLE MODE] Usage recorded (not billed): user=%d, tokens=%d", usageLog.UserID, usageLog.TotalTokens())
 		s.deferredService.ScheduleLastUsedUpdate(account.ID)
@@ -522,9 +575,23 @@ func (s *OpenAIGatewayService) RecordUsage(ctx context.Context, input *OpenAIRec
 	}, s.billingDeps(), s.usageBillingRepo)
 
 	if billingErr != nil {
+		if result.VideoUsage != nil && result.VideoUsage.Provider == PlatformBailian {
+			// A failed native settlement is retryable. Do not insert a zero-cost
+			// row that would win the unique log key over a later paid retry.
+			return billingErr
+		}
 		usageLog.ActualCost = 0
 		writeUsageLogBestEffort(ctx, s.usageLogRepo, usageLog, "service.openai_gateway")
 		return billingErr
+	}
+	if result.VideoUsage != nil && result.VideoUsage.Provider == PlatformBailian {
+		if s.usageLogRepo == nil {
+			return errors.New("Bailian usage repository is unavailable")
+		}
+		// If log persistence fails after the monetary commit, lookup can retry
+		// through SQL billing dedup and repair the log without another debit.
+		_, err := s.usageLogRepo.Create(ctx, usageLog)
+		return err
 	}
 	writeUsageLogBestEffort(ctx, s.usageLogRepo, usageLog, "service.openai_gateway")
 
@@ -591,6 +658,16 @@ func (s *OpenAIGatewayService) calculateOpenAIRecordUsageCost(
 	pricingAt time.Time,
 ) (*CostBreakdown, error) {
 	billingModel := firstUsageBillingModel(billingModels)
+	if result != nil && result.VideoUsage != nil {
+		if result.BailianVideoPricing != nil {
+			group, err := result.BailianVideoPricing.billingGroup(result.VideoUsage.Resolution)
+			if err != nil {
+				return nil, err
+			}
+			return CalculateBailianVideoCost(group, billingModel, result.VideoUsage, result.BailianVideoPricing.RateMultiplier)
+		}
+		return CalculateBailianVideoCost(bailianVideoPricingGroup(apiKey, s.cfg), billingModel, result.VideoUsage, videoMultiplier)
+	}
 	if result != nil && result.WebSearchCalls > 0 {
 		// Codex alpha/search 网页搜索按次计费：上游不返回 usage/token 字段，单价只取
 		// 分组覆盖价（nil 时默认 0.01 = 官方 $10/1000 次），不参与渠道级模型定价。

@@ -690,6 +690,10 @@ const exportToCSV = async () => {
       'Original Cost',
       'First Token (ms)',
       'Duration (ms)',
+      'Video Input Seconds',
+      'Video Output Seconds',
+      'Video Billable Seconds',
+      'Video Resolution',
     ]
     const rows = allLogs.map((log) => [
       log.created_at,
@@ -709,6 +713,10 @@ const exportToCSV = async () => {
       log.total_cost.toFixed(8),
       log.first_token_ms ?? '',
       log.duration_ms ?? '',
+      log.video_usage?.input_video_duration ?? '',
+      log.video_usage?.output_video_duration ?? '',
+      log.video_usage?.duration ?? '',
+      log.video_usage?.resolution ?? log.video_resolution ?? '',
     ].map(escapeCSVValue))
     const csvContent = [
       headers.map(escapeCSVValue).join(','),

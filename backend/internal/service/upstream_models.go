@@ -261,6 +261,12 @@ func (s *AccountTestService) SyncUpstreamModelCatalog(ctx context.Context, accou
 		return nil, newUpstreamModelSyncInternalError("Failed to save upstream model catalog", saveErr)
 	}
 	catalog := &UpstreamModelCatalog{Models: models, Metadata: make(map[string]UpstreamModelMetadata)}
+	if account != nil && account.Platform == PlatformBailian {
+		// Video models do not have text-context/token capability metadata. Do not
+		// guess it or send account credentials to a text-model registry.
+		catalog.DiscoverySource = "upstream"
+		return catalog, nil
+	}
 	if account != nil && account.IsGrok() {
 		if grokObservation != nil && grokObservation.Attempt.Status == grokCatalogStatusConfiguredFallback {
 			catalog.DiscoverySource = "configured_fallback"
@@ -800,6 +806,9 @@ func (s *AccountTestService) fetchUpstreamModelListRequest(ctx context.Context, 
 	}
 	if account == nil {
 		return nil, nil, nil, newUpstreamModelSyncConfigError("Account is required", nil)
+	}
+	if account.Platform == PlatformBailian {
+		return s.fetchBailianVideoModels(ctx, account)
 	}
 
 	if account.Platform == PlatformAntigravity && account.Type != AccountTypeAPIKey {

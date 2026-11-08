@@ -375,6 +375,16 @@ func RegisterGatewayRoutes(
 		rootRoute(http.MethodGet, prefix+"/contents/generations/tasks/:task_id", bodyLimit, h.OpenAIGateway.SeedanceTasks)
 		rootRoute(http.MethodDelete, prefix+"/contents/generations/tasks/:task_id", bodyLimit, h.OpenAIGateway.SeedanceTasks)
 	}
+	// Native DashScope video tasks are a separate platform, not Grok aliases.
+	rootRoute(http.MethodPost, service.BailianVideoCreatePath, bodyLimit, h.OpenAIGateway.BailianVideo)
+	rootRoute(http.MethodGet, "/api/v1/tasks/:task_id", bodyLimit, h.OpenAIGateway.BailianVideo)
+	rootRoute(http.MethodGet, "/api/v1/models", bodyLimit, func(c *gin.Context) {
+		if getGroupPlatform(c) != service.PlatformBailian {
+			c.JSON(http.StatusNotFound, gin.H{"code":"UnsupportedPlatform", "message":"Bailian models require a Bailian group"})
+			return
+		}
+		h.Gateway.Models(c)
+	})
 	rootRoute(http.MethodPost, "/responses", bodyLimit, responsesHandler)
 	rootRoute(http.MethodPost, "/responses/*subpath", bodyLimit, guardResponsesSubpath(responsesHandler))
 	rootRoute(http.MethodPost, "/alpha/search", textBodyLimit, h.OpenAIGateway.AlphaSearch)

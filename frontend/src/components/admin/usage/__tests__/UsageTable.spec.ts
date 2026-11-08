@@ -76,6 +76,7 @@ const messages: Record<string, string> = {
   'admin.usage.billingModeToken': 'Token',
   'admin.usage.billingModePerRequest': 'Per request',
   'admin.usage.billingModeImage': 'Image',
+  'bailian.billingMode': 'Video per second',
 	'admin.usage.requestIdCopied': 'Request ID copied',
 	'admin.usage.upstreamRequestIdCopied': 'Upstream ID copied',
 	'keys.copied': 'Copied',
@@ -145,6 +146,21 @@ const baseImageRow = {
 }
 
 describe('admin UsageTable tooltip', () => {
+  it('renders exact native video seconds and all eight wallet decimal places', () => {
+    const row = { ...baseImageRow, model: 'wan3.0-video-prime', billing_mode: 'video', image_count: 0, video_count: 1,
+      actual_cost: 0.12345678,
+      video_usage: { provider: 'bailian', input_video_duration: '1.000000000000000001', output_video_duration: '2', duration: '3.000000000000000001', resolution: '1080p' }
+    }
+    const wrapper = mount(UsageTable, {
+      props: { data: [row], loading: false, columns: [{ key: 'tokens', label: 'Usage' }, { key: 'cost', label: 'Cost' }, { key: 'billing_mode', label: 'Billing mode' }] },
+      global: { stubs: { DataTable: DataTableStub, EmptyState: true, Icon: true, Teleport: true } },
+    })
+    expect(wrapper.get('[data-testid="bailian-video-usage"]').text()).toContain('1.000000000000000001s')
+    expect(wrapper.text()).toContain('3.000000000000000001s')
+    expect(wrapper.text()).toContain('$0.12345678')
+    expect(wrapper.text()).toContain('Video per second')
+    wrapper.unmount()
+  })
   it('shows output TPS in the latency cell using total duration', () => {
     const row = { ...baseImageRow, image_count: 0, billing_mode: 'token', output_tokens: 1000, duration_ms: 20_000, first_token_ms: 10_000 }
     const wrapper = mount(UsageTable, {

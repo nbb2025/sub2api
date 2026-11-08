@@ -450,6 +450,9 @@ func provideCleanup(
 	pluginManager *service.PluginManager,
 ) func() {
 	return func() {
+		if openAIGateway != nil {
+			openAIGateway.StopBailianVideoSettlement()
+		}
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
 

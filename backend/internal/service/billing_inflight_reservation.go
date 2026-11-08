@@ -380,6 +380,8 @@ type InflightEstimateRequest struct {
 	// 视频：分辨率与时长（秒）。
 	VideoResolution      string
 	VideoDurationSeconds int
+	// Bailian bills reference input plus output, up to 30 seconds in total.
+	BailianVideo bool
 	// 音频：模式（tts/stt/realtime）与计量单位（百万字符/小时/分钟）。
 	AudioMode  string
 	AudioUnits float64
@@ -589,6 +591,19 @@ func (d inflightEstimateDeps) estimateOne(ctx context.Context, apiKey *APIKey, m
 			cost = tokenCost()
 		}
 	case InflightEstimateVideo:
+		if req.BailianVideo {
+			price, err := BailianVideoUnitPrice(bailianVideoPricingGroup(apiKey, d.cfg), model, req.VideoResolution)
+			if err != nil {
+				return 0
+			}
+			// Reserve the supplier's total bound; requested output seconds alone
+			// do not bound reference-video or smart-duration billing.
+			rate := textRate
+			if apiKey.Group != nil && apiKey.Group.VideoRateIndependent {
+				rate = apiKey.Group.VideoRateMultiplier
+			}
+			return *price * 30 * rate
+		}
 		if perRequestMode {
 			cost = maxPerRequestPrice(resolved) * float64(units) * math.Max(textRate, imageRate)
 		}

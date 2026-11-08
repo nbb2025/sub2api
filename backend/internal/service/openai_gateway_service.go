@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
+	"github.com/Wei-Shaw/sub2api/internal/domain"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/ip"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/openai"
@@ -291,6 +292,11 @@ type OpenAIForwardResult struct {
 	VideoResolution    string
 	// VideoDurationSeconds 是提交时请求的生成时长（xAI 按输出秒数计费），已归一化到 1-15 秒。
 	VideoDurationSeconds int
+	// VideoUsage contains authoritative decimal input/output/billable seconds.
+	// Bailian must never enter the Grok integer/15-second normalization path.
+	VideoUsage            *domain.VideoUsage
+	BailianVideoPricing   *BailianVideoPricingSnapshot
+	DeferredMediaResponse *BufferedMediaResponse
 	// WebSearchCalls 是 Codex alpha/search 网页搜索调用次数（每次成功请求为 1）。
 	// 上游不返回 usage 字段，>0 时走按次计费（分组单价 × 次数 × 倍率）。
 	WebSearchCalls int
@@ -475,6 +481,8 @@ type OpenAIGatewayService struct {
 	liveAttestationCipher SecretEncryptor
 
 	openaiWSPoolOnce               sync.Once
+	bailianWorkerOnce              sync.Once
+	bailianWorker                  *bailianSettlementWorker
 	openaiWSStateStoreOnce         sync.Once
 	openaiSchedulerOnce            sync.Once
 	openaiProxyStreamCircuitOnce   sync.Once
@@ -710,6 +718,7 @@ func (s *OpenAIGatewayService) CloseOpenAIWSPool() {
 	if s == nil {
 		return
 	}
+	s.StopBailianVideoSettlement()
 	s.openaiCompatSessionResponses.Close()
 	s.openaiCompatAnthropicDigestSessions.Close()
 	if s.openaiWSPool != nil {

@@ -104,6 +104,8 @@ const (
 	FieldVideoResolution = "video_resolution"
 	// FieldVideoDurationSeconds holds the string denoting the video_duration_seconds field in the database.
 	FieldVideoDurationSeconds = "video_duration_seconds"
+	// FieldVideoUsage holds the string denoting the video_usage field in the database.
+	FieldVideoUsage = "video_usage"
 	// FieldCacheTTLOverridden holds the string denoting the cache_ttl_overridden field in the database.
 	FieldCacheTTLOverridden = "cache_ttl_overridden"
 	// FieldCreatedAt holds the string denoting the created_at field in the database.
@@ -205,6 +207,7 @@ var Columns = []string{
 	FieldVideoCount,
 	FieldVideoResolution,
 	FieldVideoDurationSeconds,
+	FieldVideoUsage,
 	FieldCacheTTLOverridden,
 	FieldCreatedAt,
 }

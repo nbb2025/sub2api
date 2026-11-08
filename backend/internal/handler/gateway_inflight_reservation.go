@@ -105,6 +105,7 @@ func grokMediaInflightEstimate(endpoint service.GrokMediaEndpoint, model string,
 		return service.InflightEstimateRequest{Model: model, BodyBytes: len(body), Kind: service.InflightEstimateImage, Units: info.N}
 	default:
 		return service.InflightEstimateRequest{
+			BailianVideo:         endpoint.IsBailian(),
 			Model:                model,
 			BodyBytes:            len(body),
 			Kind:                 service.InflightEstimateVideo,

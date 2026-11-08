@@ -219,6 +219,33 @@ describe('CreateAccountModal OpenAI long-context billing', () => {
 
   afterEach(() => vi.useRealTimers())
 
+  it('creates a Bailian API key account with a required workspace origin and Wan model whitelist', async () => {
+    createAccountMock.mockResolvedValue({ id: 42, platform: 'bailian', type: 'apikey' })
+    const wrapper = mountModal()
+    await wrapper.get('[data-testid="platform-bailian"]').trigger('click')
+    await flushPromises()
+    await wrapper.get('form#create-account-form input[type="text"]').setValue('Wan workspace')
+    await wrapper.get('form#create-account-form input[type="password"]').setValue('test-bailian-key')
+    const origin = wrapper.get('input[placeholder="https://WORKSPACE_ID.cn-beijing.maas.aliyuncs.com"]')
+    expect(origin.attributes('required')).toBeDefined()
+    await wrapper.get('form#create-account-form').trigger('submit.prevent')
+    await flushPromises()
+    expect(createAccountMock).not.toHaveBeenCalled()
+    await origin.setValue('https://workspace.cn-beijing.maas.aliyuncs.com')
+    await wrapper.get('form#create-account-form').trigger('submit.prevent')
+    await flushPromises()
+    expect(createAccountMock).toHaveBeenCalledTimes(1)
+    expect(createAccountMock.mock.calls[0]?.[0]).toMatchObject({
+      platform: 'bailian', type: 'apikey',
+      credentials: {
+        api_key: 'test-bailian-key',
+        base_url: 'https://workspace.cn-beijing.maas.aliyuncs.com',
+        model_mapping: { 'wan3.0-video': 'wan3.0-video', 'wan3.0-video-prime': 'wan3.0-video-prime' }
+      }
+    })
+    wrapper.unmount()
+  })
+
   it('sets month and year expiry presets without submitting the account form', async () => {
     vi.useFakeTimers({ toFake: ['Date'] })
     vi.setSystemTime(new Date('2026-01-31T12:34:00'))

@@ -2450,6 +2450,16 @@ func VideoDurationSecondsNotNil() predicate.UsageLog {
 	return predicate.UsageLog(sql.FieldNotNull(FieldVideoDurationSeconds))
 }
 
+// VideoUsageIsNil applies the IsNil predicate on the "video_usage" field.
+func VideoUsageIsNil() predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldIsNull(FieldVideoUsage))
+}
+
+// VideoUsageNotNil applies the NotNil predicate on the "video_usage" field.
+func VideoUsageNotNil() predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldNotNull(FieldVideoUsage))
+}
+
 // CacheTTLOverriddenEQ applies the EQ predicate on the "cache_ttl_overridden" field.
 func CacheTTLOverriddenEQ(v bool) predicate.UsageLog {
 	return predicate.UsageLog(sql.FieldEQ(FieldCacheTTLOverridden, v))

@@ -7,6 +7,19 @@ import {
 } from '../groupsVideoModelPricing'
 
 describe('Grok video model pricing form', () => {
+  it('keeps Wan standard and prime rates independent with eight decimal places', () => {
+    const form = createVideoModelPricesForm({ 'wan-friendly': { '720p': 0.01234567 } }, 'bailian')
+    form['wan3.0-video']['1080p'] = 0.02345678
+    form['wan3.0-video-prime']['1080p'] = 0.12345678
+    expect(videoModelPriceFamilyRows(form, 'bailian').map(({ key }) => key)).toEqual([
+      'wan3.0-video', 'wan3.0-video-prime', 'wan-friendly'
+    ])
+    expect(serializeVideoModelPrices(form)).toEqual({
+      'wan-friendly': { '720p': 0.01234567 },
+      'wan3.0-video': { '1080p': 0.02345678 },
+      'wan3.0-video-prime': { '1080p': 0.12345678 }
+    })
+  })
   it('provides editable rows for both canonical Grok video families', () => {
     const form = createVideoModelPricesForm()
 

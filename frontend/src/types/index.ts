@@ -1864,6 +1864,16 @@ export interface UsageLog {
   image_output_size: string | null
   image_size_source: ImageSizeSource | null
   image_size_breakdown: ImageSizeBreakdown | null
+  video_count?: number
+  video_resolution?: string | null
+  video_duration_seconds?: number | null
+  video_usage?: {
+    provider: string
+    input_video_duration: number | string
+    output_video_duration: number | string
+    duration: number | string
+    resolution: string
+  } | null
   image_input_tokens: number
   image_input_cost: number
   image_output_tokens: number

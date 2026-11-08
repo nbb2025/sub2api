@@ -1212,6 +1212,10 @@ func (h *GatewayHandler) Models(c *gin.Context) {
 		writeGrokModelsList(c, xai.DefaultModelIDs())
 		return
 	}
+	if platform == service.PlatformBailian {
+		writeModelsList(c, platform, service.BailianVideoModelIDs())
+		return
+	}
 	if platform == service.PlatformTypeSafe {
 		writeModelsList(c, platform, []string{typesafe.JevLatestModel})
 		return
@@ -1341,6 +1345,10 @@ func (h *GatewayHandler) compositeAvailableModels(ctx context.Context, groupID *
 }
 
 func writeModelsList(c *gin.Context, platform string, modelIDs []string) {
+	if platform == service.PlatformBailian {
+		writeBailianModelsList(c, modelIDs)
+		return
+	}
 	if platform == service.PlatformOpenAI {
 		writeOpenAIModelsList(c, modelIDs)
 		return
@@ -1501,6 +1509,8 @@ func defaultModelIDsForPlatform(platform string) []string {
 		return claude.DefaultModelIDs()
 	case service.PlatformGrok:
 		return xai.DefaultModelIDs()
+	case service.PlatformBailian:
+		return service.BailianVideoModelIDs()
 	case service.PlatformOpenCodeGo:
 		return service.DefaultOpenCodeGoModelIDs()
 	case service.PlatformTypeSafe:

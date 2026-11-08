@@ -410,6 +410,17 @@ func (s *AccountTestService) TestAccountConnection(c *gin.Context, accountID int
 	if account.Platform == PlatformGrok {
 		return s.testGrokAccountConnection(c, account, modelID, prompt, mode, testOpts)
 	}
+	if account.Platform == PlatformBailian {
+		s.sendEvent(c, TestEvent{Type: "test_start", Model: modelID})
+		models, _, _, err := s.fetchBailianVideoModels(c.Request.Context(), account)
+		if err != nil {
+			s.sendEvent(c, TestEvent{Type: "error", Error: "Bailian authentication/model-list check failed"})
+			return err
+		}
+		s.sendEvent(c, TestEvent{Type: "content", Text: fmt.Sprintf("Bailian authentication and model catalog are available (%d Wan 3 models); no video generation was submitted.", len(models))})
+		s.sendEvent(c, TestEvent{Type: "test_complete", Success: true})
+		return nil
+	}
 
 	if account.Platform == PlatformAntigravity {
 		return s.routeAntigravityTest(c, account, modelID, prompt)
