@@ -270,6 +270,8 @@ fast_mode = true
 
 ## 部署方式
 
+本 Fork 的 Wan 3 镜像为 `ghcr.io/nbb2025/sub2api:wan3`（AMD64 / ARM64）。自动构建规则、固定版本及现有实例的切换步骤见 [镜像发布与升级](docs/container-images.md)。
+
 ### 方式一：脚本安装（推荐）
 
 一键安装脚本，自动从 GitHub Releases 下载预编译的二进制文件。

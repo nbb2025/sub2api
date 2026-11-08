@@ -244,6 +244,8 @@ Nginx drops headers containing underscores by default (e.g. `session_id`), which
 
 ## Deployment
 
+This fork publishes Wan 3 images at `ghcr.io/nbb2025/sub2api:wan3` for AMD64 and ARM64. See [container publishing and upgrades](docs/container-images.md) for automated builds, immutable versions, and switching an existing installation.
+
 ### Method 1: Script Installation (Recommended)
 
 One-click installation script that downloads pre-built binaries from GitHub Releases.

@@ -2,6 +2,8 @@
 
 `bailian` 是独立平台，可创建自己的分组、API Key 账号、模型映射、视频定价和用户平台额度。它与 Grok 平级，使用百炼原生异步协议，不依赖 Grok 的响应结构或 15 秒计费限制。本次范围是 `wan3.0-video`、`wan3.0-video-prime` 的全部视频生成模式。
 
+容器部署可使用 `ghcr.io/nbb2025/sub2api:wan3`，自动发布与现有实例切换步骤见 [镜像发布与升级](container-images.md)。
+
 ## 管理员配置
 
 1. 新建 **Alibaba Cloud Bailian / 阿里云百炼** 分组。

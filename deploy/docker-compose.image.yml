@@ -1,0 +1,5 @@
+# Optional override for an existing installation. Keep its original base
+# Compose file/project, .env and all persistent storage unchanged.
+services:
+  sub2api:
+    image: ${SUB2API_IMAGE:?Set SUB2API_IMAGE to a verified tag or digest}

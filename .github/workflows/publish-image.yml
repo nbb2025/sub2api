@@ -1,0 +1,209 @@
+name: Publish container image
+
+on:
+  push:
+    branches:
+      - main
+      - codex/bailian-wan-video
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: container-${{ github.repository }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    if: github.repository == 'nbb2025/sub2api' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/codex/bailian-wan-video')
+    runs-on: ubuntu-24.04
+    outputs:
+      image: ${{ steps.meta.outputs.image }}
+      channel: ${{ steps.meta.outputs.channel }}
+      version: ${{ steps.meta.outputs.version }}
+      date: ${{ steps.meta.outputs.date }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Resolve image metadata from this commit
+        id: meta
+        shell: bash
+        run: |
+          set -euo pipefail
+          case "$GITHUB_REF_NAME" in
+            main) channel=latest ;;
+            codex/bailian-wan-video) channel=wan3 ;;
+            *) exit 1 ;;
+          esac
+          version="$(tr -d '\r\n' < backend/cmd/server/VERSION)-nbb.${GITHUB_SHA:0:12}"
+          {
+            echo "image=ghcr.io/${GITHUB_REPOSITORY,,}"
+            echo "channel=$channel"
+            echo "version=$version"
+            echo "date=$(git show -s --format=%cI "$GITHUB_SHA")"
+          } >> "$GITHUB_OUTPUT"
+
+  validate:
+    needs: prepare
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: backend/go.mod
+          cache-dependency-path: backend/go.sum
+      - name: Backend unit regression
+        working-directory: backend
+        run: go test -tags=unit ./...
+      - name: Native video financial integration
+        working-directory: backend
+        env:
+          CI: 'true'
+          SUB2API_TEST_POSTGRES_IMAGE: postgres:16-alpine
+        run: go test -tags=integration ./internal/repository -run TestBailian -count=1 -timeout=5m
+
+  build:
+    needs: [prepare, validate]
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-24.04
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      packages: write
+    env:
+      IMAGE: ${{ needs.prepare.outputs.image }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Set up native image builder
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4
+      - name: Authenticate with the repository-scoped token
+        uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build and push the architecture digest
+        id: build
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7
+        with:
+          context: .
+          file: Dockerfile
+          platforms: linux/${{ matrix.arch }}
+          tags: ${{ env.IMAGE }}
+          outputs: type=image,push-by-digest=true,name-canonical=true,push=true
+          provenance: mode=max
+          sbom: true
+          build-args: |
+            VERSION=${{ needs.prepare.outputs.version }}
+            COMMIT=${{ github.sha }}
+            DATE=${{ needs.prepare.outputs.date }}
+            GOPROXY=https://proxy.golang.org,direct
+            GOSUMDB=sum.golang.org
+            NPM_CONFIG_REGISTRY=https://registry.npmjs.org
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.version=${{ needs.prepare.outputs.version }}
+            org.opencontainers.image.created=${{ needs.prepare.outputs.date }}
+          cache-from: type=gha,scope=container-${{ matrix.arch }}
+          cache-to: type=gha,mode=max,scope=container-${{ matrix.arch }}
+      - name: Smoke-test the published digest on its native CPU
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          ref="$IMAGE@$DIGEST"
+          docker pull "$ref"
+          docker run --rm "$ref" --version 2>&1 | tee "$RUNNER_TEMP/image-version.txt"
+          grep -F "$GITHUB_SHA" "$RUNNER_TEMP/image-version.txt"
+          docker run --rm --entrypoint /usr/local/bin/pg_dump "$ref" --version
+          docker run --rm --entrypoint /usr/local/bin/psql "$ref" --version
+          test "$(docker image inspect "$ref" --format '{{index .Config.Labels "org.opencontainers.image.revision"}}')" = "$GITHUB_SHA"
+          mkdir -p "$RUNNER_TEMP/digests"
+          touch "$RUNNER_TEMP/digests/${DIGEST#sha256:}"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: image-digest-${{ matrix.arch }}
+          path: ${{ runner.temp }}/digests/*
+          if-no-files-found: error
+          retention-days: 3
+
+  publish:
+    needs: [prepare, build]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      packages: write
+    env:
+      IMAGE: ${{ needs.prepare.outputs.image }}
+      CHANNEL: ${{ needs.prepare.outputs.channel }}
+    steps:
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4
+      - uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          pattern: image-digest-*
+          merge-multiple: true
+          path: ${{ runner.temp }}/digests
+      - name: Publish tags only after both architectures pass
+        shell: bash
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          files=("$RUNNER_TEMP/digests/"*)
+          test "${#files[@]}" -eq 2
+          sources=()
+          for file in "${files[@]}"; do
+            digest="${file##*/}"
+            [[ "$digest" =~ ^[a-f0-9]{64}$ ]]
+            sources+=("$IMAGE@sha256:$digest")
+          done
+          docker buildx imagetools create \
+            --tag "$IMAGE:$CHANNEL" \
+            --tag "$IMAGE:sha-$GITHUB_SHA" \
+            "${sources[@]}"
+          docker buildx imagetools inspect "$IMAGE:sha-$GITHUB_SHA" --raw > "$RUNNER_TEMP/manifest.json"
+          jq -e '[.manifests[].platform | select(.os == "linux") | .architecture] | unique == ["amd64", "arm64"]' "$RUNNER_TEMP/manifest.json"
+          digest="$(docker buildx imagetools inspect "$IMAGE:sha-$GITHUB_SHA" --format '{{json .Manifest.Digest}}' | tr -d '"')"
+          [[ "$digest" =~ ^sha256:[a-f0-9]{64}$ ]]
+          jq -n --arg image "$IMAGE" --arg channel "$CHANNEL" --arg sha "$GITHUB_SHA" --arg digest "$digest" \
+            '{image:$image,channel:$channel,commit:$sha,digest:$digest,pinned_image:($image+"@"+$digest),platforms:["linux/amd64","linux/arm64"]}' \
+            > "$RUNNER_TEMP/image-release.json"
+          {
+            echo '## Published container image'
+            echo "- Channel: \`$IMAGE:$CHANNEL\`"
+            echo "- Commit: \`$GITHUB_SHA\`"
+            echo "- Pinned image: \`$IMAGE@$digest\`"
+            echo '- Platforms: linux/amd64, linux/arm64'
+            echo '- Existing servers are not automatically restarted.'
+          } >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: container-image-release
+          path: |
+            ${{ runner.temp }}/image-release.json
+            ${{ runner.temp }}/manifest.json
+          retention-days: 30
