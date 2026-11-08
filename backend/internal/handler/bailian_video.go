@@ -21,8 +21,10 @@ func (h *OpenAIGatewayHandler) BailianVideo(c *gin.Context) {
 		return
 	}
 	endpoint, taskID := service.BailianEndpointCreate, ""
+	setActualUpstreamEndpoint(c, EndpointBailianVideoCreate)
 	if c.Request.Method == http.MethodGet {
-		endpoint, taskID = service.BailianEndpointStatus, service.BailianTaskKey(c.Param("task_id"))
+		endpoint, taskID = service.BailianEndpointStatus, service.BailianTaskKey(firstNonEmptyString(c.Param("task_id"), c.Param("request_id")))
+		setActualUpstreamEndpoint(c, EndpointBailianTasks)
 	}
 	h.handleGrokMedia(c, endpoint, taskID)
 }

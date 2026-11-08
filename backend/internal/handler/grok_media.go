@@ -540,6 +540,7 @@ func (h *OpenAIGatewayHandler) handleGrokMedia(c *gin.Context, endpoint service.
 			if endpoint.IsBailian() {
 				task := &service.BailianVideoTask{TaskID: result.ResponseID, UserID: subject.UserID, APIKeyID: apiKey.ID,
 					GroupID: *apiKey.GroupID, AccountID: account.ID, QuotaPlatform: service.QuotaPlatform(c.Request.Context(), apiKey),
+					InboundEndpoint: GetInboundEndpoint(c),
 					Pending: service.GrokVideoPendingBilling{Platform: platform, Model: requestModel, BillingModel: result.BillingModel,
 						UpstreamModel: result.UpstreamModel, VideoResolution: result.VideoResolution, VideoDurationSeconds: result.VideoDurationSeconds,
 						OriginalModel: clientRequestedModel(c, requestModel), CreatedAt: videoCreateStartedAt, BailianPricing: bailianPricing}}

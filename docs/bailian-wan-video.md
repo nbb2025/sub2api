@@ -21,21 +21,40 @@
 
 ## 对外接口
 
-Base URL 为 Sub2API 根地址。下面接口的 `Authorization` 使用 **Sub2API Key**，不向调用方暴露百炼供应商 Key。
+推荐使用统一 `/v1` 接口。下面示例以 Sub2API 站点根地址为 Base URL；若适配器把 API Base URL 配成 `https://YOUR_SUB2API/v1`，则拼接 `/videos/generations`、`/videos/{task_id}` 和 `/models`，避免重复追加 `/v1`。`Authorization` 使用绑定独立百炼分组的 **Sub2API Key**，不向调用方暴露百炼供应商 Key。
 
 | 方法 | 路径 | 功能 |
 | --- | --- | --- |
-| POST | `/api/v1/services/aigc/video-generation/video-synthesis` | 创建原生视频任务 |
-| GET | `/api/v1/tasks/{task_id}` | 查询任务状态、结果与原始用量 |
-| GET | `/api/v1/models` | 百炼格式的当前分组模型列表 |
+| POST | `/v1/videos/generations` | 创建原生视频任务，含参考生成、编辑和延长 |
+| GET | `/v1/videos/{task_id}` | 查询任务状态、结果与原始用量 |
 | GET | `/v1/models` | 通用模型列表格式 |
 
-原生模型列表支持 `model`、`name`、`page_no`、`page_size`。列表来自本地分组可见模型，不对普通用户透传供应商的价格目录。
+URL 统一使用 `/v1`，请求和响应 JSON 保持下文的百炼原生结构。任务 ID 仍取 `output.task_id`，视频 URL 仍取 `output.video_url`。
+
+旧原生路径继续兼容，复用同一任务归属、价格快照、结算和数据库去重：
+
+| 方法 | 兼容路径 | 功能 |
+| --- | --- | --- |
+| POST | `/api/v1/services/aigc/video-generation/video-synthesis` | 创建原生视频任务 |
+| GET | `/api/v1/tasks/{task_id}` | 查询同一个任务，可与 `/v1/videos/{task_id}` 交替使用 |
+| GET | `/api/v1/models` | 百炼格式的模型列表，支持 `model`、`name`、`page_no`、`page_size` |
+
+模型列表来自本地分组可见模型，不对普通用户透传供应商的价格目录。`GET /v1/models` 示例：
+
+```json
+{
+  "object": "list",
+  "data": [
+    {"id":"wan3.0-video","object":"model","owned_by":"bailian"},
+    {"id":"wan3.0-video-prime","object":"model","owned_by":"bailian"}
+  ]
+}
+```
 
 创建请求中只有 `model` 会按账号映射改写；`input`、`parameters` 及扩展字段保持原样。服务端自动添加 `X-DashScope-Async: enable`，出现 OSS 媒体地址时自动添加 `X-DashScope-OssResourceResolve: enable`。
 
 ```bash
-curl 'https://YOUR_SUB2API/api/v1/services/aigc/video-generation/video-synthesis' \
+curl 'https://YOUR_SUB2API/v1/videos/generations' \
   -H "Authorization: Bearer $SUB2API_KEY" \
   -H 'Content-Type: application/json' \
   -d '{
@@ -108,7 +127,7 @@ curl 'https://YOUR_SUB2API/api/v1/services/aigc/video-generation/video-synthesis
 ```
 
 ```bash
-curl 'https://YOUR_SUB2API/api/v1/tasks/video-task-id' \
+curl 'https://YOUR_SUB2API/v1/videos/video-task-id' \
   -H "Authorization: Bearer $SUB2API_KEY"
 ```
 
@@ -122,7 +141,7 @@ curl 'https://YOUR_SUB2API/api/v1/tasks/video-task-id' \
 
 ## 前端适配约定
 
-供 `ai-iagent-dev-frontend` 等调用方使用：供应商标识设为 `bailian`，Base URL 使用 Sub2API 站点根地址，不追加 `/v1`。使用绑定百炼分组的 **Sub2API Key**，请求头为 `Authorization: Bearer ...` 和 `Content-Type: application/json`；异步及 OSS 请求头由 Sub2API 自动补齐。
+供 `ai-iagent-dev-frontend` 等调用方使用：供应商标识设为 `bailian`，统一 API Base URL 可设为 `https://YOUR_SUB2API/v1`，随后拼接 `/videos/generations`、`/videos/{task_id}` 和 `/models`。也可用站点根地址拼接上表的完整路径。使用绑定百炼分组的 **Sub2API Key**，请求头为 `Authorization: Bearer ...` 和 `Content-Type: application/json`；异步及 OSS 请求头由 Sub2API 自动补齐。
 
 两个 Wan 3 模型使用同一请求结构。分辨率和媒体类型的枚举区分大小写。本地 `File` / `Blob` 需经调用方已有上传流程转为供应商可读取的 URL；仅图片也可转为 Base64 data URI。视频、音频和文件应使用 URL，此创建接口接收 JSON。
 
@@ -154,7 +173,7 @@ type Wan3TaskStatus =
 ```
 
 1. 创建提交上述 JSON，保存 `output.task_id`。单次请求只生成一个视频；批量提交由调用方管理多个任务，API 不定义 `n` 批量参数。
-2. 使用同一 Base URL 和 Key 轮询 `GET /api/v1/tasks/{encodeURIComponent(taskId)}`。`taskId` 是原生 ID，不加内部 `bailian:` 前缀。建议间隔 3–5 秒；429 遵循 `Retry-After`，不要并发密集轮询。
+2. 使用同一站点和 Key 轮询 `GET /v1/videos/{encodeURIComponent(taskId)}`。`taskId` 是原生 ID，不加内部 `bailian:` 前缀。建议间隔 3–5 秒；429 遵循 `Retry-After`，不要并发密集轮询。
 3. `PENDING` / `RUNNING` 继续等待；`SUCCEEDED` 读取 `output.video_url`；`FAILED` / `CANCELED` / `UNKNOWN` 停止自动轮询并展示错误或状态，不自动重新创建任务。API 不提供进度百分比，不应根据等待时间伪造。
 4. 原生失败可能在 HTTP 200 的 `output.code` / `output.message` 中；也要处理顶层 `code` / `message` 及网关 `error.type` / `error.message`。HTTP 503 且 `error.type=billing_state_unavailable` 时，只重试同一任务查询。
 5. 文生、首尾帧、参考生成、编辑和延长使用同一个创建路径。编辑/延长通过参考视频与提示词表达，不另发 Grok 的 `/videos/edits` 或 `/videos/extensions`。

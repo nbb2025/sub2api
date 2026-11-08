@@ -77,7 +77,8 @@ func TestBailianBackgroundSettlementPersistsUsageAndRetriesWithoutPollingAgain(t
 	snapshot, err := svc.SnapshotBailianVideoPricing(ctx, key, account, "wan-public")
 	require.NoError(t, err)
 	task := &BailianVideoTask{TaskID: "bailian:wan-task", UserID: 92, APIKeyID: 91, GroupID: 90, AccountID: account.ID,
-		QuotaPlatform: PlatformBailian, LeaseToken: "lease-1", Pending: GrokVideoPendingBilling{Platform: PlatformBailian, Model: "wan-public", UpstreamModel: "wan3.0-video-prime", CreatedAt: time.Now().Add(-time.Minute).Format(time.RFC3339Nano), BailianPricing: snapshot}}
+		InboundEndpoint: "/v1/videos/generations",
+		QuotaPlatform:   PlatformBailian, LeaseToken: "lease-1", Pending: GrokVideoPendingBilling{Platform: PlatformBailian, Model: "wan-public", UpstreamModel: "wan3.0-video-prime", CreatedAt: time.Now().Add(-time.Minute).Format(time.RFC3339Nano), BailianPricing: snapshot}}
 	require.NoError(t, store.SaveBailianVideoTask(ctx, task))
 	keys := NewAPIKeyService(bailianWorkerKeyRepo{}, nil, nil, nil, nil, nil, svc.cfg)
 	svc.settleBailianVideoTask(ctx, keys, task)
@@ -97,6 +98,8 @@ func TestBailianBackgroundSettlementPersistsUsageAndRetriesWithoutPollingAgain(t
 	require.Equal(t, .3703701, store.lastCmd.AccountQuotaCost)
 	require.Equal(t, firstFingerprint, store.lastCmd.RequestFingerprint, "restart must keep the same monetary command")
 	require.Equal(t, .46296263, logs.lastLog.ActualCost)
+	require.NotNil(t, logs.lastLog.InboundEndpoint)
+	require.Equal(t, "/v1/videos/generations", *logs.lastLog.InboundEndpoint)
 	require.True(t, svc.BailianVideoAlreadySettled(ctx, task.TaskID, task.UserID, task.APIKeyID))
 	raw, err := json.Marshal(store.task)
 	require.NoError(t, err)

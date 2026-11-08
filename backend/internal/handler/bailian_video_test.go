@@ -46,6 +46,12 @@ func TestBailianHandlerTaskOwnershipAndBillingClaim(t *testing.T) {
 	c, w = newContext(http.MethodGet)
 	h.BailianVideo(c)
 	require.Equal(t, 200, w.Code, w.Body.String())
+	c, w = newContext(http.MethodGet)
+	c.Request.URL.Path = "/v1/videos/wan-task"
+	c.Params = gin.Params{{Key: "request_id", Value: "wan-task"}}
+	h.BailianVideo(c)
+	require.Equal(t, 200, w.Code, w.Body.String())
+	require.Equal(t, EndpointBailianTasks, GetUpstreamEndpoint(c, service.PlatformBailian))
 	for _, other := range []string{"user", "key", "group", "task", "provider"} {
 		c, w = newContext(http.MethodGet)
 		key, _ := middleware.GetAPIKeyFromContext(c)

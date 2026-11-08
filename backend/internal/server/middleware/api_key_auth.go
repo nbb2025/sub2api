@@ -177,7 +177,11 @@ func apiKeyAuthWithSubscription(apiKeyService *service.APIKeyService, subscripti
 		// Async image task polling only reads data that already belongs to the
 		// authenticated key and must remain available after the completed
 		// generation consumes the key's remaining balance.
-		skipBilling := c.Request.URL.Path == "/v1/usage" || billingInfoRequest || isAsyncImageTaskRead(c.Request.Method, c.Request.URL.Path) || isBailianVideoTaskRead(c.Request.Method, c.Request.URL.Path)
+		bailianTaskRead := apiKey.Group != nil &&
+			(apiKey.Group.Platform == service.PlatformBailian ||
+				(apiKey.Group.Platform == service.PlatformComposite && strings.HasPrefix(c.Request.URL.Path, "/api/v1/tasks/"))) &&
+			isBailianVideoTaskRead(c.Request.Method, c.Request.URL.Path)
+		skipBilling := c.Request.URL.Path == "/v1/usage" || billingInfoRequest || isAsyncImageTaskRead(c.Request.Method, c.Request.URL.Path) || bailianTaskRead
 
 		// ── 4. SimpleMode → early return ─────────────────────────────
 
@@ -349,11 +353,22 @@ func isAsyncImageTaskRead(method, path string) bool {
 }
 
 func isBailianVideoTaskRead(method, path string) bool {
-	if method != http.MethodGet || !strings.HasPrefix(path, "/api/v1/tasks/") {
+	if method != http.MethodGet {
 		return false
 	}
-	id := strings.TrimPrefix(path, "/api/v1/tasks/")
-	return id != "" && !strings.Contains(id, "/")
+	for _, prefix := range []string{
+		"/api/v1/tasks/",
+		"/v1/videos/generations/", "/videos/generations/",
+		"/v1/videos/edits/", "/videos/edits/",
+		"/v1/videos/extensions/", "/videos/extensions/",
+		"/v1/videos/", "/videos/",
+	} {
+		if strings.HasPrefix(path, prefix) {
+			id := strings.TrimPrefix(path, prefix)
+			return id != "" && !strings.Contains(id, "/")
+		}
+	}
+	return false
 }
 
 // GetAPIKeyFromContext 从上下文中获取API key

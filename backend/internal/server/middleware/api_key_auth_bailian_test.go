@@ -29,14 +29,19 @@ func TestBailianTaskReadAfterQuotaExhaustionStillRequiresAuthentication(t *testi
 	cfg := &config.Config{RunMode: config.RunModeStandard}
 	router := newAuthTestRouter(service.NewAPIKeyService(repo, nil, nil, nil, nil, nil, cfg), nil, cfg)
 	router.GET("/api/v1/tasks/:task_id", func(c *gin.Context) { c.Status(http.StatusOK) })
+	router.GET("/v1/videos/:request_id", func(c *gin.Context) { c.Status(http.StatusOK) })
+	router.POST("/v1/videos/generations", func(c *gin.Context) { c.Status(http.StatusOK) })
 	router.POST(service.BailianVideoCreatePath, func(c *gin.Context) { c.Status(http.StatusOK) })
 	for _, tc := range []struct {
 		method, path, status string
 		want                 int
 	}{
 		{http.MethodGet, "/api/v1/tasks/owned-task", service.StatusAPIKeyQuotaExhausted, http.StatusOK},
+		{http.MethodGet, "/v1/videos/owned-task", service.StatusAPIKeyQuotaExhausted, http.StatusOK},
+		{http.MethodPost, "/v1/videos/generations", service.StatusAPIKeyQuotaExhausted, http.StatusTooManyRequests},
 		{http.MethodPost, service.BailianVideoCreatePath, service.StatusAPIKeyQuotaExhausted, http.StatusTooManyRequests},
 		{http.MethodGet, "/api/v1/tasks/owned-task", service.StatusDisabled, http.StatusUnauthorized},
+		{http.MethodGet, "/v1/videos/owned-task", service.StatusDisabled, http.StatusUnauthorized},
 	} {
 		key.Status = tc.status
 		req := httptest.NewRequest(tc.method, tc.path, nil)
@@ -45,8 +50,14 @@ func TestBailianTaskReadAfterQuotaExhaustionStillRequiresAuthentication(t *testi
 		router.ServeHTTP(w, req)
 		require.Equal(t, tc.want, w.Code, w.Body.String())
 	}
-	for _, path := range []string{"/api/v1/tasks/", "/api/v1/tasks/id/extra", service.BailianVideoCreatePath} {
+	for _, path := range []string{"/api/v1/tasks/", "/api/v1/tasks/id/extra", "/v1/videos/", "/v1/videos/id/content", "/v1/videos/generations/id/extra", service.BailianVideoCreatePath} {
 		require.False(t, isBailianVideoTaskRead(http.MethodGet, path))
 	}
 	require.False(t, isBailianVideoTaskRead(http.MethodPost, "/api/v1/tasks/id"))
+	group.Platform, key.Status = service.PlatformGrok, service.StatusAPIKeyQuotaExhausted
+	req := httptest.NewRequest(http.MethodGet, "/v1/videos/owned-task", nil)
+	req.Header.Set("Authorization", "Bearer "+key.Key)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	require.Equal(t, http.StatusTooManyRequests, w.Code, "Bailian aliases must not bypass Grok admission")
 }

@@ -19,6 +19,7 @@ func TestBailianDurableTasksLeaseFencingAndPrecision(t *testing.T) {
 	client := testEntClient(t)
 	store := NewUsageBillingRepository(client, integrationDB).(service.BailianVideoTaskStore)
 	task := &service.BailianVideoTask{TaskID: "bailian:" + uuid.NewString(), UserID: 11, APIKeyID: 22, GroupID: 33, AccountID: 44,
+		InboundEndpoint: "/v1/videos/generations",
 		Pending: service.GrokVideoPendingBilling{Platform: service.PlatformBailian, Model: "wan3.0-video", CreatedAt: time.Now().Format(time.RFC3339Nano),
 			BailianPricing: &service.BailianVideoPricingSnapshot{Prices: map[string]float64{"1080p": .01234567}, BillingModels: map[string]string{"1080p": "wan3.0-video"}, RateMultiplier: 1.25}}}
 	t.Cleanup(func() {
@@ -68,6 +69,7 @@ func TestBailianDurableTasksLeaseFencingAndPrecision(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "1.000000000000000001", loaded.Usage.InputVideoDuration.String())
 	require.Equal(t, .01234567, loaded.Pending.BailianPricing.Prices["1080p"])
+	require.Equal(t, "/v1/videos/generations", loaded.InboundEndpoint)
 	batch, err = store.LeaseBailianVideoTasks(ctx, 64)
 	require.NoError(t, err)
 	require.Nil(t, find(batch), "terminal tasks stop background polling")

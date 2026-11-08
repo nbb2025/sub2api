@@ -16,15 +16,16 @@ import (
 // Known usage is saved before settlement so a database failure can be retried
 // even after the supplier's 24-hour task lookup window has elapsed.
 type BailianVideoTask struct {
-	TaskID        string                  `json:"task_id"`
-	UserID        int64                   `json:"user_id"`
-	APIKeyID      int64                   `json:"api_key_id"`
-	GroupID       int64                   `json:"group_id"`
-	AccountID     int64                   `json:"account_id"`
-	QuotaPlatform string                  `json:"quota_platform"`
-	Pending       GrokVideoPendingBilling `json:"pending"`
-	Usage         *domain.VideoUsage      `json:"usage,omitempty"`
-	LeaseToken    string                  `json:"-"`
+	TaskID          string                  `json:"task_id"`
+	UserID          int64                   `json:"user_id"`
+	APIKeyID        int64                   `json:"api_key_id"`
+	GroupID         int64                   `json:"group_id"`
+	AccountID       int64                   `json:"account_id"`
+	QuotaPlatform   string                  `json:"quota_platform"`
+	InboundEndpoint string                  `json:"inbound_endpoint,omitempty"`
+	Pending         GrokVideoPendingBilling `json:"pending"`
+	Usage           *domain.VideoUsage      `json:"usage,omitempty"`
+	LeaseToken      string                  `json:"-"`
 }
 
 func (t *BailianVideoTask) StorageKey() string {
@@ -242,8 +243,12 @@ func (s *OpenAIGatewayService) settleBailianVideoTask(parent context.Context, ke
 		Model: task.Pending.Model, BillingModel: billingModel, UpstreamModel: task.Pending.UpstreamModel,
 		VideoUsage: task.Usage, VideoCount: 1, VideoResolution: task.Usage.Resolution,
 		BailianVideoPricing: task.Pending.BailianPricing, Duration: GrokVideoE2EDuration(task.Pending.CreatedAt, time.Now())}
+	inboundEndpoint := task.InboundEndpoint
+	if inboundEndpoint == "" {
+		inboundEndpoint = BailianVideoCreatePath
+	}
 	err = s.RecordUsage(ctx, &OpenAIRecordUsageInput{Result: result, APIKey: key, User: user, Account: account,
-		InboundEndpoint: BailianVideoCreatePath, UpstreamEndpoint: "/api/v1/tasks", QuotaPlatform: task.QuotaPlatform,
+		InboundEndpoint: inboundEndpoint, UpstreamEndpoint: "/api/v1/tasks", QuotaPlatform: task.QuotaPlatform,
 		RequestPayloadHash: HashUsageRequestPayload([]byte(task.TaskID)), APIKeyService: keys,
 		ChannelUsageFields: ChannelUsageFields{OriginalModel: task.Pending.OriginalModel, ChannelMappedModel: task.Pending.Model}})
 	if err != nil {
