@@ -21,6 +21,10 @@ func TestBailianDurableTasksLeaseFencingAndPrecision(t *testing.T) {
 	task := &service.BailianVideoTask{TaskID: "bailian:" + uuid.NewString(), UserID: 11, APIKeyID: 22, GroupID: 33, AccountID: 44,
 		Pending: service.GrokVideoPendingBilling{Platform: service.PlatformBailian, Model: "wan3.0-video", CreatedAt: time.Now().Format(time.RFC3339Nano),
 			BailianPricing: &service.BailianVideoPricingSnapshot{Prices: map[string]float64{"1080p": .01234567}, BillingModels: map[string]string{"1080p": "wan3.0-video"}, RateMultiplier: 1.25}}}
+	t.Cleanup(func() {
+		_, err := integrationDB.ExecContext(context.Background(), "DELETE FROM bailian_video_tasks WHERE task_key=$1", task.StorageKey())
+		require.NoError(t, err)
+	})
 	require.NoError(t, store.SaveBailianVideoTask(ctx, task))
 	require.NoError(t, store.SaveBailianVideoTask(ctx, task))
 	_, err := integrationDB.ExecContext(ctx, "UPDATE bailian_video_tasks SET next_poll_at=NOW()-INTERVAL '1 second' WHERE task_key=$1", task.StorageKey())

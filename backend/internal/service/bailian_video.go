@@ -47,7 +47,7 @@ type BailianVideoPricingSnapshot struct {
 func (s *OpenAIGatewayService) SnapshotBailianVideoPricing(ctx context.Context, key *APIKey, account *Account, model string) (*BailianVideoPricingSnapshot, error) {
 	group := bailianVideoPricingGroup(key, s.cfg)
 	if group == nil || account == nil || key.User == nil {
-		return nil, fmt.Errorf("Bailian video pricing requires a group, user and account")
+		return nil, fmt.Errorf("bailian video pricing requires a group, user and account")
 	}
 	rate := s.ResolveUserGroupRateMultiplier(ctx, key.User.ID, group.ID, group.RateMultiplier)
 	snapshot := &BailianVideoPricingSnapshot{
@@ -95,11 +95,11 @@ func bailianRetryAfter(raw string) time.Duration {
 
 func (p *BailianVideoPricingSnapshot) billingGroup(resolution string) (*Group, error) {
 	if p == nil {
-		return nil, fmt.Errorf("Bailian task pricing snapshot is unavailable")
+		return nil, fmt.Errorf("bailian task pricing snapshot is unavailable")
 	}
 	price, ok := p.Prices[resolution]
 	if !ok || math.IsNaN(price) || math.IsInf(price, 0) || price < 0 {
-		return nil, fmt.Errorf("Bailian task has no valid price for %s", resolution)
+		return nil, fmt.Errorf("bailian task has no valid price for %s", resolution)
 	}
 	return &Group{VideoPrice480P: &price, VideoPrice720P: &price, VideoPrice1080P: &price}, nil
 }
@@ -114,7 +114,7 @@ func bailianVideoSettledKey(taskID string, userID, keyID int64) string {
 func (s *OpenAIGatewayService) ClaimBailianVideoBilling(ctx context.Context, taskID string, userID, keyID int64) (claimed, settled bool, err error) {
 	key := grokVideoPendingBillingKey(taskID, userID, keyID)
 	if s == nil || s.cache == nil || key == "" {
-		return false, false, fmt.Errorf("Bailian billing cache is unavailable")
+		return false, false, fmt.Errorf("bailian billing cache is unavailable")
 	}
 	marker, err := s.cache.GetGrokVideoPendingBilling(ctx, bailianVideoSettledKey(taskID, userID, keyID))
 	if err != nil {
@@ -129,7 +129,7 @@ func (s *OpenAIGatewayService) ClaimBailianVideoBilling(ctx context.Context, tas
 
 func (s *OpenAIGatewayService) MarkBailianVideoSettled(ctx context.Context, taskID string, userID, keyID int64) error {
 	if s == nil || s.cache == nil || grokVideoPendingBillingKey(taskID, userID, keyID) == "" {
-		return fmt.Errorf("Bailian billing cache is unavailable")
+		return fmt.Errorf("bailian billing cache is unavailable")
 	}
 	return s.cache.SetGrokVideoPendingBilling(ctx, bailianVideoSettledKey(taskID, userID, keyID), []byte("settled"), 24*time.Hour)
 }
@@ -156,7 +156,7 @@ func (s *OpenAIGatewayService) WriteBufferedMediaResponse(c *gin.Context, result
 // already represent a paid job. Polls stay bound to the creating account/key.
 func (s *OpenAIGatewayService) ForwardBailianVideo(ctx context.Context, c *gin.Context, account *Account, endpoint GrokMediaEndpoint, taskKey string, body []byte) (*OpenAIForwardResult, error) {
 	if account == nil || account.Platform != PlatformBailian || account.Type != AccountTypeAPIKey || !endpoint.IsBailian() {
-		return nil, fmt.Errorf("Bailian video requires a Bailian API key account")
+		return nil, fmt.Errorf("bailian video requires a Bailian API key account")
 	}
 	base, err := s.validateUpstreamBaseURL(account.GetCredential("base_url"))
 	if err != nil {
@@ -190,7 +190,7 @@ func (s *OpenAIGatewayService) ForwardBailianVideo(ctx context.Context, c *gin.C
 	}
 	key := strings.TrimSpace(account.GetCredential("api_key"))
 	if key == "" {
-		return nil, fmt.Errorf("Bailian account missing api_key")
+		return nil, fmt.Errorf("bailian account missing api_key")
 	}
 	started := time.Now()
 	req, err := http.NewRequestWithContext(ctx, method, base+path, bytes.NewReader(body))
@@ -240,14 +240,14 @@ func (s *OpenAIGatewayService) ForwardBailianVideo(ctx context.Context, c *gin.C
 		if c != nil {
 			writeGrokMediaResponse(c, resp, raw, s.responseHeaderFilter)
 		}
-		return nil, fmt.Errorf("Bailian API rejected the request")
+		return nil, fmt.Errorf("bailian API rejected the request")
 	}
 	id := strings.TrimSpace(gjson.GetBytes(raw, "output.task_id").String())
 	if id == "" || validateUpstreamPathSegment("Bailian task ID", id) != nil {
-		return nil, fmt.Errorf("Bailian response missing a valid task ID")
+		return nil, fmt.Errorf("bailian response missing a valid task ID")
 	}
 	if endpoint == BailianEndpointStatus && BailianTaskKey(id) != result.ResponseID {
-		return nil, fmt.Errorf("Bailian response task ID mismatch")
+		return nil, fmt.Errorf("bailian response task ID mismatch")
 	}
 	result.ResponseID = BailianTaskKey(id)
 	switch gjson.GetBytes(raw, "output.task_status").String() {
@@ -306,7 +306,7 @@ func ParseBailianVideoUsage(raw []byte) (*domain.VideoUsage, error) {
 // Aliyun's CNY rate card is not a USD wallet tariff; no exchange rate is assumed.
 func BailianVideoUnitPrice(group *Group, model, resolution string) (*float64, error) {
 	if group == nil {
-		return nil, fmt.Errorf("Bailian video pricing requires a group")
+		return nil, fmt.Errorf("bailian video pricing requires a group")
 	}
 	if _, ok := LookupVideoBillingResolution(resolution); !ok {
 		return nil, fmt.Errorf("unsupported Bailian video resolution")
@@ -344,7 +344,7 @@ func (s *OpenAIGatewayService) ResolveBailianVideoBillingModel(key *APIKey, requ
 // even when an account exposes a friendly model alias.
 func ResolveBailianVideoBillingModel(group *Group, requested, upstream, resolution string) (string, error) {
 	if group == nil {
-		return "", fmt.Errorf("Bailian video pricing requires a group")
+		return "", fmt.Errorf("bailian video pricing requires a group")
 	}
 	for _, model := range []string{requested, upstream} {
 		if LookupVideoModelPrice(group.VideoModelPrices, model, resolution) != nil {

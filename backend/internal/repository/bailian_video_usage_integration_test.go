@@ -26,6 +26,24 @@ func TestBailianVideoBillingPrecisionAndDedup(t *testing.T) {
 	group := mustCreateGroup(t, client, &service.Group{Name: "bailian-" + uuid.NewString(), Platform: service.PlatformBailian, RateMultiplier: 1.25, VideoPrice1080P: &price})
 	key := mustCreateApiKey(t, client, &service.APIKey{UserID: user.ID, Key: "sk-bailian-" + uuid.NewString(), Name: "wan", Quota: 100, GroupID: &group.ID})
 	account := mustCreateAccount(t, client, &service.Account{Name: "bailian-" + uuid.NewString(), Platform: service.PlatformBailian, Type: service.AccountTypeAPIKey})
+	// RecordUsage manages its own SQL transaction, so this test cannot use an
+	// outer rollback. Remove only its fixtures before global dashboard suites run.
+	t.Cleanup(func() {
+		for _, row := range []struct {
+			query string
+			id    int64
+		}{
+			{"DELETE FROM usage_logs WHERE api_key_id=$1", key.ID},
+			{"DELETE FROM usage_billing_dedup WHERE api_key_id=$1", key.ID},
+			{"DELETE FROM api_keys WHERE id=$1", key.ID},
+			{"DELETE FROM users WHERE id=$1", user.ID},
+			{"DELETE FROM accounts WHERE id=$1", account.ID},
+			{"DELETE FROM groups WHERE id=$1", group.ID},
+		} {
+			_, err := integrationDB.ExecContext(context.Background(), row.query, row.id)
+			require.NoError(t, err, "clean up Bailian billing fixture")
+		}
+	})
 	key.Group = group
 	key.User = user
 	keyService := service.NewAPIKeyService(NewAPIKeyRepository(client, integrationDB), NewUserRepository(client, integrationDB), NewGroupRepository(client, integrationDB), nil, nil, nil, &config.Config{})

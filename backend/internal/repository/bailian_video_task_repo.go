@@ -37,7 +37,7 @@ func (r *usageBillingRepository) SaveBailianVideoTask(ctx context.Context, task 
 		return err
 	}
 	if existing == nil || existing.GroupID != task.GroupID || existing.AccountID != task.AccountID || existing.Pending.Model != task.Pending.Model {
-		return errors.New("Bailian task ID conflicts with a different accepted task")
+		return errors.New("bailian task ID conflicts with a different accepted task")
 	}
 	return nil
 }
@@ -97,7 +97,7 @@ func (r *usageBillingRepository) LeaseBailianVideoTasks(ctx context.Context, lim
 
 func (r *usageBillingRepository) UpdateBailianVideoTask(ctx context.Context, task *service.BailianVideoTask, state string, next time.Time) error {
 	if task == nil || task.LeaseToken == "" {
-		return errors.New("Bailian task lease is required")
+		return errors.New("bailian task lease is required")
 	}
 	switch state {
 	case "pending", "done", "failed", "expired":
@@ -121,7 +121,7 @@ func (r *usageBillingRepository) UpdateBailianVideoTask(ctx context.Context, tas
 		return err
 	}
 	if count != 1 {
-		return fmt.Errorf("Bailian task lease was replaced")
+		return fmt.Errorf("bailian task lease was replaced")
 	}
 	return nil
 }
@@ -142,7 +142,7 @@ func (r *usageBillingRepository) ObserveBailianVideoUsage(ctx context.Context, k
 		return err
 	}
 	if count != 1 {
-		return errors.New("Bailian task usage snapshot is missing or inconsistent")
+		return errors.New("bailian task usage snapshot is missing or inconsistent")
 	}
 	return nil
 }

@@ -539,7 +539,7 @@ func (s *OpenAIGatewayService) RecordUsage(ctx context.Context, input *OpenAIRec
 	if s.cfg != nil && s.cfg.RunMode == config.RunModeSimple && !simpleModeKeyRateLimitOnly {
 		if result.VideoUsage != nil && result.VideoUsage.Provider == PlatformBailian {
 			if s.usageLogRepo == nil {
-				return errors.New("Bailian usage repository is unavailable")
+				return errors.New("bailian usage repository is unavailable")
 			}
 			_, err := s.usageLogRepo.Create(ctx, usageLog)
 			if err == nil {
@@ -586,7 +586,7 @@ func (s *OpenAIGatewayService) RecordUsage(ctx context.Context, input *OpenAIRec
 	}
 	if result.VideoUsage != nil && result.VideoUsage.Provider == PlatformBailian {
 		if s.usageLogRepo == nil {
-			return errors.New("Bailian usage repository is unavailable")
+			return errors.New("bailian usage repository is unavailable")
 		}
 		// If log persistence fails after the monetary commit, lookup can retry
 		// through SQL billing dedup and repair the log without another debit.

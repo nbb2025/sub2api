@@ -120,6 +120,82 @@ curl 'https://YOUR_SUB2API/api/v1/tasks/video-task-id' \
 
 创建任务遇到超时、连接断开、429、5xx 或无效响应不自动重建或换账号重试，因为上游可能已经接受任务。轮询同一任务不会重新生成视频。原生成功响应在任务归属和计费快照写入之后才下发，避免客户端立即轮询时找不到任务。
 
+## 前端适配约定
+
+供 `ai-iagent-dev-frontend` 等调用方使用：供应商标识设为 `bailian`，Base URL 使用 Sub2API 站点根地址，不追加 `/v1`。使用绑定百炼分组的 **Sub2API Key**，请求头为 `Authorization: Bearer ...` 和 `Content-Type: application/json`；异步及 OSS 请求头由 Sub2API 自动补齐。
+
+两个 Wan 3 模型使用同一请求结构。分辨率和媒体类型的枚举区分大小写。本地 `File` / `Blob` 需经调用方已有上传流程转为供应商可读取的 URL；仅图片也可转为 Base64 data URI。视频、音频和文件应使用 URL，此创建接口接收 JSON。
+
+```ts
+type Wan3MediaType =
+  | 'first_frame' | 'last_frame' | 'reference_image'
+  | 'reference_video' | 'reference_audio' | 'file' | 'link'
+
+interface Wan3CreateRequest {
+  model: string // wan3.0-video / wan3.0-video-prime，或配置的公开别名
+  input: {
+    prompt?: string
+    media?: Array<{ type: Wan3MediaType; url: string }>
+  }
+  parameters?: {
+    duration?: number // 整数；-1 为智能时长，范围见上表
+    resolution?: '480P' | '720P' | '1080P'
+    ratio?: 'adaptive' | '21:9' | '16:9' | '4:3' | '1:1' | '3:4' | '9:16'
+    audio?: boolean
+    seed?: number
+    prompt_extend?: boolean
+    watermark?: boolean
+  }
+}
+
+type Wan3TaskStatus =
+  | 'PENDING' | 'RUNNING' | 'SUCCEEDED'
+  | 'FAILED' | 'CANCELED' | 'UNKNOWN'
+```
+
+1. 创建提交上述 JSON，保存 `output.task_id`。单次请求只生成一个视频；批量提交由调用方管理多个任务，API 不定义 `n` 批量参数。
+2. 使用同一 Base URL 和 Key 轮询 `GET /api/v1/tasks/{encodeURIComponent(taskId)}`。`taskId` 是原生 ID，不加内部 `bailian:` 前缀。建议间隔 3–5 秒；429 遵循 `Retry-After`，不要并发密集轮询。
+3. `PENDING` / `RUNNING` 继续等待；`SUCCEEDED` 读取 `output.video_url`；`FAILED` / `CANCELED` / `UNKNOWN` 停止自动轮询并展示错误或状态，不自动重新创建任务。API 不提供进度百分比，不应根据等待时间伪造。
+4. 原生失败可能在 HTTP 200 的 `output.code` / `output.message` 中；也要处理顶层 `code` / `message` 及网关 `error.type` / `error.message`。HTTP 503 且 `error.type=billing_state_unavailable` 时，只重试同一任务查询。
+5. 文生、首尾帧、参考生成、编辑和延长使用同一个创建路径。编辑/延长通过参考视频与提示词表达，不另发 Grok 的 `/videos/edits` 或 `/videos/extensions`。
+
+公开任务接口目前是创建和查询；停止前端轮询不会取消供应商任务，后台仍会结算完成的任务。创建按钮应防重复提交，创建请求关闭通用 SDK 的自动重试。若连接断开且未取得任务 ID，应标记“受理状态未确认”，不要直接判定上游未创建或自动重新提交。
+
+| 常见响应 | 调用方处理 |
+| --- | --- |
+| 2xx + `output.task_id` | 保存任务 ID，按 `task_status` 处理 |
+| 400 + `error.type=invalid_request_error` | 展示参数错误，修正请求 |
+| 400 + `error.type=billing_configuration_error` | 管理员补齐该模型/分辨率的分组价格 |
+| 401 / 403 | 检查 Sub2API Key、用户与分组状态 |
+| 404 | 检查路由、任务 ID 和创建任务时的 Key/分组 |
+| 429 | 额度或频率限制，展示原始错误；查询退避遵循 `Retry-After` |
+| 503 + `error.type=billing_state_unavailable` | 只重试同一任务查询，不重建视频 |
+| 其他供应商错误 | 读取原生 `code` / `message`，保留可诊断的状态 |
+
+完成响应示例（其余上游字段仍原样保留）：
+
+```json
+{
+  "request_id": "http-trace-id",
+  "output": {
+    "task_id": "video-task-id",
+    "task_status": "SUCCEEDED",
+    "video_url": "https://example.com/result.mp4"
+  },
+  "usage": {
+    "video_count": 1,
+    "input_video_duration": 5.125000001,
+    "output_video_duration": 6.375,
+    "duration": 11.500000001,
+    "fps": 30,
+    "SR": 1080,
+    "ratio": "16:9"
+  }
+}
+```
+
+输出时长显示 `usage.output_video_duration`，计费时长显示 `usage.duration`，二者不能混用。原生用量不返回 Token 或本地结算金额；费用以 Sub2API 用量记录为准，前端不自行用秒数换算 Token。需要精确展示或导出时使用用量 API 的十进制字符串，不用浏览器浮点计算重建账单。
+
 ## 计费与精度
 
 客户端查询和后台 worker 都可观察任务成功并发起同一笔结算。仅 `SUCCEEDED`、有效结果 URL 和有效用量满足结算条件；其他任务状态不收费。创建本身不扣视频费用。

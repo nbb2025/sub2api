@@ -72,7 +72,7 @@ func (s *OpenAIGatewayService) StoreBailianVideoTask(ctx context.Context, task *
 	if s.BailianVideoTaskStorageAvailable() { // Unbilled simple-mode test/embedded deployments.
 		return nil
 	}
-	return fmt.Errorf("Bailian durable task storage is unavailable")
+	return fmt.Errorf("bailian durable task storage is unavailable")
 }
 
 // RestoreBailianVideoTaskBinding repairs a lost Redis owner/snapshot from SQL.
@@ -188,7 +188,7 @@ func (s *OpenAIGatewayService) settleBailianVideoTask(parent context.Context, ke
 			if s.concurrencyService != nil {
 				slot, err := s.concurrencyService.AcquireAccountSlot(ctx, account.ID, account.Concurrency)
 				if err != nil || slot == nil || !slot.Acquired {
-					return nil, fmt.Errorf("Bailian status query capacity unavailable")
+					return nil, fmt.Errorf("bailian status query capacity unavailable")
 				}
 				if slot.ReleaseFunc != nil {
 					defer slot.ReleaseFunc()
