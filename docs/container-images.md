@@ -13,7 +13,7 @@
 
 工作流使用本次提交构建，先运行后端单元测试与 Wan 3 PostgreSQL 计费集成测试，再在两个原生架构 Runner 上分别编译前后端、发布架构摘要，并验证应用版本、提交号和 PostgreSQL 备份工具。两个架构都通过后才更新上述标签，同时发布 SBOM 与构建来源证明。完整的 CI 和安全扫描也会在推送时运行，可在 Actions 查看各自结果。
 
-发布只使用工作流自带的 `GITHUB_TOKEN`，发布任务取得 `packages: write`；不需要把个人 Git/gh 凭据写入仓库或创建 PAT Secret。工作流仅允许此 Fork 的上述两个分支发布镜像，也支持对这两个分支手动运行。已有 `v*` 版本标签发布流程继续保留。
+发布只使用工作流自带的 `GITHUB_TOKEN`，发布任务取得 `packages: write`；不需要把个人 Git/gh 凭据写入仓库或创建 PAT Secret。工作流仅允许此 Fork 的上述两个分支发布镜像；合入默认分支后也可在 Actions 中选择这两个分支手动运行。已有 `v*` 版本标签发布流程继续保留。
 
 GitHub 首次创建 GHCR 包默认是私有。若重新创建或迁移仓库，管理员需在包设置里将可见性设为 **Public**，才能匿名拉取；公开代码仓库不会自动使包公开。可在 [容器包页面](https://github.com/users/nbb2025/packages/container/package/sub2api) 检查可见性。参考 [GitHub GHCR 文档](https://docs.github.com/en/packages/working-with-a-github-packages-registry/working-with-the-container-registry)。
 

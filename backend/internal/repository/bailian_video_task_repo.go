@@ -71,7 +71,7 @@ func (r *usageBillingRepository) LeaseBailianVideoTasks(ctx context.Context, lim
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	tasks := make([]*service.BailianVideoTask, 0, limit)
 	for rows.Next() {
 		var payload []byte

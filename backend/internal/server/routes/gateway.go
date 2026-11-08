@@ -380,7 +380,7 @@ func RegisterGatewayRoutes(
 	rootRoute(http.MethodGet, "/api/v1/tasks/:task_id", bodyLimit, h.OpenAIGateway.BailianVideo)
 	rootRoute(http.MethodGet, "/api/v1/models", bodyLimit, func(c *gin.Context) {
 		if getGroupPlatform(c) != service.PlatformBailian {
-			c.JSON(http.StatusNotFound, gin.H{"code":"UnsupportedPlatform", "message":"Bailian models require a Bailian group"})
+			c.JSON(http.StatusNotFound, gin.H{"code": "UnsupportedPlatform", "message": "Bailian models require a Bailian group"})
 			return
 		}
 		h.Gateway.Models(c)

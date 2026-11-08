@@ -38,23 +38,23 @@ func prepareBailianCompletionBilling(ctx context.Context, h *OpenAIGatewayHandle
 		}
 	}
 	if err != nil || pending == nil || pending.Platform != service.PlatformBailian {
-		return nil, fmt.Errorf("Bailian task billing snapshot is unavailable")
+		return nil, fmt.Errorf("bailian task billing snapshot is unavailable")
 	}
 	if pending.BailianPricing == nil || pending.BailianPricing.BillingModels[result.VideoUsage.Resolution] == "" {
-		return nil, fmt.Errorf("Bailian task price snapshot is unavailable for the output resolution")
+		return nil, fmt.Errorf("bailian task price snapshot is unavailable for the output resolution")
 	}
 	if err := h.gatewayService.PersistBailianVideoObservedUsage(ctx, taskID, subject.UserID, key.ID, result.VideoUsage); err != nil {
 		return nil, err
 	}
 	claimed, settled, err := h.gatewayService.ClaimBailianVideoBilling(ctx, taskID, subject.UserID, key.ID)
 	if err != nil {
-		return nil, fmt.Errorf("Bailian task billing claim is unavailable")
+		return nil, fmt.Errorf("bailian task billing claim is unavailable")
 	}
 	if settled {
 		return nil, nil
 	}
 	if !claimed {
-		return nil, fmt.Errorf("Bailian task settlement is in progress; retry lookup")
+		return nil, fmt.Errorf("bailian task settlement is in progress; retry lookup")
 	}
 	merged := *result
 	merged.Model, merged.BillingModel = pending.Model, pending.BailianPricing.BillingModels[result.VideoUsage.Resolution]
