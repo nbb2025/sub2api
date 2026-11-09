@@ -101,6 +101,31 @@ func TestBailianHandlerTaskOwnershipAndBillingClaim(t *testing.T) {
 	require.Len(t, bindings.billed, 1)
 }
 
+func TestBailianWorkbenchInlineCreationReachesProviderWithoutSession(t *testing.T) {
+	h, slots, bindings, upstream := newGrokMediaSlotHandler(t, false, false, service.PlatformBailian)
+	body := `{"model":"wan3.0-video","input":{"prompt":"test","media":[{"type":"reference_video","url":"data:video/mp4;base64,AAAA"},{"type":"reference_audio","url":"data:audio/wav;base64,AA=="}]},"parameters":{"duration":2,"resolution":"480P"}}`
+	upstream.call = func(req *http.Request, id int64) (*http.Response, error) {
+		require.True(t, strings.HasSuffix(req.URL.Path, service.BailianVideoCreatePath))
+		require.Empty(t, req.Header.Get("X-Iagent-Studio-Session"))
+		forwarded, err := io.ReadAll(req.Body)
+		require.NoError(t, err)
+		require.Contains(t, string(forwarded), "data:video/mp4;base64,AAAA")
+		require.Contains(t, string(forwarded), "data:audio/wav;base64,AA==")
+		return &http.Response{StatusCode: 200, Header: http.Header{"Content-Type": []string{"application/json"}}, Body: io.NopCloser(strings.NewReader(`{"output":{"task_id":"wan-inline-fixture","task_status":"PENDING"}}`))}, nil
+	}
+	c, w := grokMediaSlotContext(context.Background(), true)
+	key, _ := middleware.GetAPIKeyFromContext(c)
+	price := 0.1
+	key.Group.Platform, key.Group.VideoPrice480P = service.PlatformBailian, &price
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/wan/workbench/videos/generations", strings.NewReader(body))
+	c.Request = c.Request.WithContext(service.WithBailianWorkbenchMedia(c.Request.Context()))
+	h.BailianVideo(c)
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	require.Equal(t, 1, upstream.calls)
+	require.Len(t, bindings.pending, 1)
+	slots.assertReleased(t)
+}
+
 type bailianHandlerBillingRepo struct {
 	service.UsageBillingRepository
 	err    error

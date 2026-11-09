@@ -117,7 +117,7 @@ func (h *OpenAIGatewayHandler) handleGrokMedia(c *gin.Context, endpoint service.
 		}
 	}
 	if endpoint == service.BailianEndpointCreate {
-		requestInfo, err = service.ParseBailianVideoRequest(body)
+		requestInfo, err = service.ParseBailianVideoRequestForContext(c.Request.Context(), body)
 		if err != nil {
 			h.errorResponse(c, http.StatusBadRequest, "invalid_request_error", err.Error())
 			return

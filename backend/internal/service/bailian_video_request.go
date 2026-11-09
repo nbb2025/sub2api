@@ -2,9 +2,11 @@ package service
 
 import (
 	"bytes"
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/url"
 	"strings"
 
@@ -26,10 +28,27 @@ func BailianVideoModelIDs() []string { return []string{"wan3.0-video", "wan3.0-v
 
 func BailianTaskKey(id string) string { return "bailian:" + strings.TrimSpace(id) }
 
+type bailianWorkbenchMediaKey struct{}
+
+// Only the authenticated workbench route sets this marker, after validating
+// both a live login session and ownership of the billing API key.
+func WithBailianWorkbenchMedia(ctx context.Context) context.Context {
+	return context.WithValue(ctx, bailianWorkbenchMediaKey{}, true)
+}
+
+func ParseBailianVideoRequestForContext(ctx context.Context, body []byte) (GrokMediaRequestInfo, error) {
+	allowInline, _ := ctx.Value(bailianWorkbenchMediaKey{}).(bool)
+	return parseBailianVideoRequest(body, allowInline)
+}
+
 // ParseBailianVideoRequest validates the native Wan 3 contract without rewriting
 // its body or defaults. All task modes share the same model and native endpoint.
 // Remote media size, duration and input+output limits are validated by Bailian.
 func ParseBailianVideoRequest(body []byte) (GrokMediaRequestInfo, error) {
+	return parseBailianVideoRequest(body, false)
+}
+
+func parseBailianVideoRequest(body []byte, allowInline bool) (GrokMediaRequestInfo, error) {
 	var info GrokMediaRequestInfo
 	if !gjson.ValidBytes(body) || !gjson.ParseBytes(body).IsObject() {
 		return info, fmt.Errorf("request body must be a JSON object")
@@ -109,7 +128,7 @@ func ParseBailianVideoRequest(body []byte) (GrokMediaRequestInfo, error) {
 			return info, fmt.Errorf("too many %s items", kind)
 		}
 		value := item.Get("url")
-		if value.Type != gjson.String || !validBailianMediaURL(kind, value.String()) {
+		if value.Type != gjson.String || !(validBailianMediaURL(kind, value.String()) || allowInline && validBailianWorkbenchMedia(kind, value.String())) {
 			return info, fmt.Errorf("invalid %s URL", kind)
 		}
 		if kind == "first_frame" || kind == "last_frame" || kind == "reference_image" {
@@ -144,6 +163,29 @@ func ParseBailianVideoRequest(body []byte) (GrokMediaRequestInfo, error) {
 		}
 	}
 	return info, nil
+}
+
+func validBailianWorkbenchMedia(kind, raw string) bool {
+	header, payload, ok := strings.Cut(raw, ",")
+	if !ok || payload == "" || strings.ContainsAny(payload, "\r\n") {
+		return false
+	}
+	maxBytes := 0
+	switch kind {
+	case "reference_video":
+		if header == "data:video/mp4;base64" || header == "data:video/quicktime;base64" {
+			maxBytes = 100_000_000
+		}
+	case "reference_audio":
+		if header == "data:audio/wav;base64" || header == "data:audio/x-wav;base64" || header == "data:audio/mpeg;base64" || header == "data:audio/mp3;base64" {
+			maxBytes = 15_000_000
+		}
+	}
+	if maxBytes == 0 || len(payload) > base64.StdEncoding.EncodedLen(maxBytes) {
+		return false
+	}
+	decoded, err := io.Copy(io.Discard, base64.NewDecoder(base64.StdEncoding.Strict(), strings.NewReader(payload)))
+	return err == nil && decoded > 0 && decoded <= int64(maxBytes)
 }
 
 func validBailianMediaURL(kind, raw string) bool {

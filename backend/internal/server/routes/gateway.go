@@ -28,6 +28,7 @@ func RegisterGatewayRoutes(
 	settingService *service.SettingService,
 	compositeResolver *service.CompositeRouteResolver,
 	cfg *config.Config,
+	workbenchAuth ...middleware.JWTAuthMiddleware,
 ) {
 	bodyMemoryBudget := pkghttputil.NewBodyMemoryBudget(cfg.Gateway.RequestBodyMemoryBudgetBytes)
 	bodyLimit := middleware.RequestBodyLimit(cfg.Gateway.MaxBodySize, bodyMemoryBudget)
@@ -277,6 +278,10 @@ func RegisterGatewayRoutes(
 		// canonical /videos/generations route inside the Grok media forwarder.
 		gateway.POST("/videos", videoGenerationHandler)
 		gateway.POST("/videos/generations", videoGenerationHandler)
+		if len(workbenchAuth) > 0 && workbenchAuth[0] != nil {
+			chain := bailianWorkbenchSession(workbenchAuth[0])
+			gateway.POST("/wan/workbench/videos/generations", append(chain, videoGenerationHandler)...)
+		}
 		gateway.POST("/videos/edits", videoEditHandler)
 		gateway.POST("/videos/extensions", videoExtensionHandler)
 		gateway.GET("/videos/generations/:request_id/content", videoContentHandler)

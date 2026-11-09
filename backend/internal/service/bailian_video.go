@@ -166,7 +166,7 @@ func (s *OpenAIGatewayService) ForwardBailianVideo(ctx context.Context, c *gin.C
 	path, method := BailianVideoCreatePath, http.MethodPost
 	result := &OpenAIForwardResult{}
 	if endpoint == BailianEndpointCreate {
-		info, err := ParseBailianVideoRequest(body)
+		info, err := ParseBailianVideoRequestForContext(ctx, body)
 		if err != nil {
 			return nil, err
 		}
