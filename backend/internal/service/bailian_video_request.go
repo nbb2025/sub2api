@@ -128,7 +128,11 @@ func parseBailianVideoRequest(body []byte, allowInline bool) (GrokMediaRequestIn
 			return info, fmt.Errorf("too many %s items", kind)
 		}
 		value := item.Get("url")
-		if value.Type != gjson.String || !(validBailianMediaURL(kind, value.String()) || allowInline && validBailianWorkbenchMedia(kind, value.String())) {
+		validURL := validBailianMediaURL(kind, value.String())
+		if allowInline && !validURL {
+			validURL = validBailianWorkbenchMedia(kind, value.String())
+		}
+		if value.Type != gjson.String || !validURL {
 			return info, fmt.Errorf("invalid %s URL", kind)
 		}
 		if kind == "first_frame" || kind == "last_frame" || kind == "reference_image" {
