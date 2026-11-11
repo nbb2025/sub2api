@@ -10,7 +10,7 @@
             ? 'bg-amber-100 text-amber-700 hover:bg-amber-200 dark:bg-amber-900/30 dark:text-amber-400 dark:hover:bg-amber-900/50'
             : 'bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-dark-800 dark:text-dark-400 dark:hover:bg-dark-700'
         ]"
-        :title="hasUpdate ? t('version.updateAvailable') : t('version.upToDate')"
+        :title="badgeTitle"
       >
         <span v-if="currentVersion" class="font-medium">v{{ currentVersion }}</span>
         <span
@@ -42,6 +42,7 @@
               t('version.currentVersion')
             }}</span>
             <button
+              v-if="!manualUpdateUrl"
               @click="refreshVersion(true)"
               class="rounded-lg p-1.5 text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-600 dark:hover:bg-dark-700 dark:hover:text-dark-200"
               :disabled="loading"
@@ -89,7 +90,7 @@
                   <span v-else class="text-2xl font-bold text-gray-400 dark:text-dark-500">--</span>
                   <!-- Show check mark when up to date -->
                   <span
-                    v-if="!hasUpdate"
+                    v-if="!manualUpdateUrl && !hasUpdate"
                     class="flex h-5 w-5 items-center justify-center rounded-full bg-green-100 dark:bg-green-900/30"
                   >
                     <svg
@@ -105,7 +106,7 @@
                     </svg>
                   </span>
                 </div>
-                <p class="mt-1 text-xs text-gray-500 dark:text-dark-400">
+                <p v-if="!manualUpdateUrl" class="mt-1 text-xs text-gray-500 dark:text-dark-400">
                   {{
                     hasUpdate
                       ? t('version.latestVersion') + ': v' + latestVersion
@@ -114,8 +115,23 @@
                 </p>
               </div>
 
+              <div v-if="manualUpdateUrl" class="space-y-2">
+                <a
+                  :href="manualUpdateUrl"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  class="flex w-full items-center justify-center gap-2 rounded-lg bg-primary-500 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-primary-600"
+                >
+                  <Icon name="externalLink" size="sm" :stroke-width="2" />
+                  {{ t('version.manualUpdate') }}
+                </a>
+                <p class="text-xs leading-relaxed text-gray-500 dark:text-dark-400">
+                  {{ t('version.containerUpdateHint') }}
+                </p>
+              </div>
+
               <!-- Priority 1: Update error (must check before hasUpdate) -->
-              <div v-if="updateError" class="space-y-2">
+              <div v-else-if="updateError" class="space-y-2">
                 <div
                   class="flex items-center gap-3 rounded-lg border border-red-200 bg-red-50 p-3 dark:border-red-800/50 dark:bg-red-900/20"
                 >
@@ -676,6 +692,11 @@ const latestVersion = computed(() => appStore.latestVersion)
 const hasUpdate = computed(() => appStore.hasUpdate)
 const releaseInfo = computed(() => appStore.releaseInfo)
 const buildType = computed(() => appStore.buildType)
+const manualUpdateUrl = computed(() => appStore.manualUpdateUrl)
+const badgeTitle = computed(() => {
+  if (manualUpdateUrl.value) return t('version.manualUpdate')
+  return hasUpdate.value ? t('version.updateAvailable') : t('version.upToDate')
+})
 
 // Update process states (local to this component)
 const updating = ref(false)
@@ -728,8 +749,7 @@ const activeManualCommand = computed(() =>
   manualTab.value === 'docker' ? dockerRollbackCommand.value : scriptRollbackCommand.value
 )
 
-// Only show update check for release builds (binary/docker deployment)
-const isReleaseBuild = computed(() => buildType.value === 'release')
+const isReleaseBuild = computed(() => buildType.value === 'release' && !manualUpdateUrl.value)
 
 function toggleDropdown() {
   dropdownOpen.value = !dropdownOpen.value

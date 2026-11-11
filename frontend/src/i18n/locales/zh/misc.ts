@@ -32,6 +32,8 @@ export default {
     sourceMode: '源码构建',
     sourceModeHint: '源码构建请使用 git pull 更新',
     updateNow: '立即更新',
+    manualUpdate: '手动更新',
+    containerUpdateHint: '请在部署主机拉取对应标签的镜像，再重建应用容器。',
     updating: '正在更新...',
     updateComplete: '更新完成',
     updateFailed: '更新失败',

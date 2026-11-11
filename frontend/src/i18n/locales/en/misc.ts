@@ -32,6 +32,8 @@ export default {
     sourceMode: 'Source Build',
     sourceModeHint: 'Source build, use git pull to update',
     updateNow: 'Update Now',
+    manualUpdate: 'Update Manually',
+    containerUpdateHint: 'Pull the matching image tag on the deployment host and recreate the app container.',
     updating: 'Updating...',
     updateComplete: 'Update Complete',
     updateFailed: 'Update Failed',

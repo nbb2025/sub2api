@@ -69,6 +69,37 @@ func TestUpdateServicePerformUpdateNoUpdateReturnsSentinel(t *testing.T) {
 	require.ErrorIs(t, err, ErrNoUpdateAvailable)
 }
 
+func TestUpdateServiceForkContainerUsesManualUpdates(t *testing.T) {
+	ctx := context.Background()
+	cache := &updateServiceCacheStub{}
+	upstream := NewUpdateService(cache, &updateServiceGitHubClientStub{
+		release: &GitHubRelease{TagName: "v0.2.21", HTMLURL: "https://github.com/Wei-Shaw/sub2api/releases/tag/v0.2.21"},
+	}, "0.2.20", "release")
+	official, err := upstream.CheckUpdate(ctx, false)
+	require.NoError(t, err)
+	require.True(t, official.HasUpdate)
+	require.NotEmpty(t, cache.data)
+
+	const version = "0.2.20-nbb.f6744f79ad5b"
+	fork := NewUpdateService(cache, nil, version, "release")
+	for _, force := range []bool{false, true} {
+		info, err := fork.CheckUpdate(ctx, force)
+		require.NoError(t, err)
+		require.Equal(t, version, info.CurrentVersion)
+		require.Equal(t, "https://github.com/nbb2025/sub2api/pkgs/container/sub2api", info.ManualUpdateURL)
+		require.Empty(t, info.LatestVersion)
+		require.False(t, info.HasUpdate)
+		require.Nil(t, info.ReleaseInfo)
+	}
+
+	versions, err := fork.ListRollbackVersions(ctx)
+	require.NoError(t, err)
+	require.Empty(t, versions)
+	require.ErrorIs(t, fork.PerformUpdate(ctx), ErrContainerUpdateRequired)
+	require.ErrorIs(t, fork.RollbackToVersion(ctx, "0.2.19"), ErrContainerUpdateRequired)
+	require.ErrorIs(t, fork.Rollback(), ErrContainerUpdateRequired)
+}
+
 func newRollbackTestService(current string, releases []*GitHubRelease) *UpdateService {
 	return NewUpdateService(
 		&updateServiceCacheStub{},
