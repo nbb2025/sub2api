@@ -21,13 +21,15 @@ type ModelRequestMetrics struct {
 }
 
 type ModelRequestMetric struct {
-	GroupID         int64                      `json:"group_id"`
-	Model           string                     `json:"model"`
-	Succeeded       int64                      `json:"succeeded"`
-	Failed          int64                      `json:"failed"`
-	AvgLatencyMs    *float64                   `json:"avg_latency_ms"`
-	TokensPerSecond *float64                   `json:"tokens_per_second"`
-	Buckets         []ModelRequestMetricBucket `json:"buckets"`
+	GroupID                     int64                      `json:"group_id"`
+	Model                       string                     `json:"model"`
+	Succeeded                   int64                      `json:"succeeded"`
+	Failed                      int64                      `json:"failed"`
+	AvgLatencyMs                *float64                   `json:"avg_latency_ms"`
+	TokensPerSecond             *float64                   `json:"tokens_per_second"` // End-to-end rate kept for existing consumers.
+	StreamOutputTokensPerSecond *float64                   `json:"stream_output_tokens_per_second"`
+	StreamOutputSamples         int64                      `json:"stream_output_samples"`
+	Buckets                     []ModelRequestMetricBucket `json:"buckets"`
 }
 
 type ModelRequestMetricBucket struct {

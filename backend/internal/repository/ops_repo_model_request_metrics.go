@@ -31,6 +31,8 @@ WITH failures AS MATERIALIZED (
 ), outcomes AS (
   SELECT u.group_id, LOWER(BTRIM(COALESCE(NULLIF(BTRIM(u.requested_model), ''), u.model))) AS model,
     u.created_at AS completed_at, TRUE AS succeeded, NULLIF(u.duration_ms, 0)::bigint AS latency_ms,
+    CASE WHEN (u.stream OR u.openai_ws_mode) AND u.first_token_ms > 0 AND u.first_token_ms < u.duration_ms
+      THEN u.duration_ms - u.first_token_ms END AS stream_output_ms,
     CASE WHEN u.output_tokens > 0 AND u.duration_ms > 0
       AND u.image_count = 0 AND u.image_output_tokens = 0 AND COALESCE(u.billing_mode, '') <> 'image'
       AND COALESCE(u.video_count, 0) = 0 AND u.video_usage IS NULL
@@ -51,16 +53,16 @@ WITH failures AS MATERIALIZED (
     )
 
   UNION ALL
-  SELECT group_id, model, created_at, FALSE, NULL, NULL FROM failures
+  SELECT group_id, model, created_at, FALSE, NULL, NULL, NULL FROM failures
 
   UNION ALL
-  SELECT group_id, LOWER(BTRIM(model)), completed_at, succeeded, latency_ms, NULL
+  SELECT group_id, LOWER(BTRIM(model)), completed_at, succeeded, latency_ms, NULL, NULL
   FROM model_video_outcomes WHERE completed_at >= $1 AND completed_at < $2
 
   UNION ALL
   SELECT (payload->>'group_id')::bigint,
     LOWER(BTRIM(COALESCE(NULLIF(BTRIM(payload#>>'{pending,original_model}'), ''), payload#>>'{pending,model}', ''))),
-    updated_at, FALSE, NULL, NULL
+    updated_at, FALSE, NULL, NULL, NULL
   FROM bailian_video_tasks
   WHERE state = 'failed' AND updated_at >= $1 AND updated_at < $2
     AND jsonb_typeof(payload->'group_id') = 'number'
@@ -71,11 +73,15 @@ WITH failures AS MATERIALIZED (
     COALESCE(SUM(latency_ms) FILTER (WHERE succeeded AND latency_ms > 0), 0)::double precision AS latency_total,
     COUNT(*) FILTER (WHERE succeeded AND latency_ms > 0) AS latency_samples,
     COALESCE(SUM(output_tokens), 0)::double precision AS tokens,
-    COALESCE(SUM(latency_ms) FILTER (WHERE output_tokens > 0), 0)::double precision AS token_latency
+    COALESCE(SUM(latency_ms) FILTER (WHERE output_tokens > 0), 0)::double precision AS token_latency,
+    COALESCE(SUM(output_tokens - 1) FILTER (WHERE output_tokens > 1 AND stream_output_ms IS NOT NULL), 0)::double precision AS stream_tokens,
+    COALESCE(SUM(stream_output_ms) FILTER (WHERE output_tokens > 1), 0)::double precision AS stream_latency,
+    COUNT(stream_output_ms) FILTER (WHERE output_tokens > 1) AS stream_samples
   FROM outcomes WHERE model <> '' AND group_id > 0
   GROUP BY group_id, model, bucket
 )
-SELECT group_id, model, bucket, succeeded, failed, latency_total, latency_samples, tokens, token_latency
+SELECT group_id, model, bucket, succeeded, failed, latency_total, latency_samples,
+       tokens, token_latency, stream_tokens, stream_latency, stream_samples
 FROM hourly ORDER BY group_id, model, bucket
 `
 
@@ -89,6 +95,7 @@ func (r *opsRepository) GetModelRequestMetrics(ctx context.Context, start, end t
 	items := make([]service.ModelRequestMetric, 0)
 	var current *service.ModelRequestMetric
 	var latencyTotal, tokenCount, tokenLatency float64
+	var streamTokenCount, streamLatency float64
 	var latencySamples int64
 	finish := func() {
 		if current == nil {
@@ -102,28 +109,37 @@ func (r *opsRepository) GetModelRequestMetrics(ctx context.Context, start, end t
 			rate := tokenCount * 1000 / tokenLatency
 			current.TokensPerSecond = &rate
 		}
+		if streamLatency > 0 {
+			rate := streamTokenCount * 1000 / streamLatency
+			current.StreamOutputTokensPerSecond = &rate
+		}
 		items = append(items, *current)
 	}
 	for rows.Next() {
-		var groupID, samples int64
+		var groupID, samples, streamSamples int64
 		var model string
 		var bucket service.ModelRequestMetricBucket
-		var latency, tokens, duration float64
-		if err := rows.Scan(&groupID, &model, &bucket.Index, &bucket.Succeeded, &bucket.Failed, &latency, &samples, &tokens, &duration); err != nil {
+		var latency, tokens, duration, streamTokens, streamDuration float64
+		if err := rows.Scan(&groupID, &model, &bucket.Index, &bucket.Succeeded, &bucket.Failed,
+			&latency, &samples, &tokens, &duration, &streamTokens, &streamDuration, &streamSamples); err != nil {
 			return nil, err
 		}
 		if current == nil || current.GroupID != groupID || current.Model != model {
 			finish()
 			current = &service.ModelRequestMetric{GroupID: groupID, Model: model}
 			latencyTotal, latencySamples, tokenCount, tokenLatency = 0, 0, 0, 0
+			streamTokenCount, streamLatency = 0, 0
 		}
 		current.Succeeded += bucket.Succeeded
 		current.Failed += bucket.Failed
+		current.StreamOutputSamples += streamSamples
 		current.Buckets = append(current.Buckets, bucket)
 		latencyTotal += latency
 		latencySamples += samples
 		tokenCount += tokens
 		tokenLatency += duration
+		streamTokenCount += streamTokens
+		streamLatency += streamDuration
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err

@@ -39,6 +39,13 @@ func TestModelRequestMetricsRollingWindow(t *testing.T) {
 			user.ID, key.ID, account.ID, groupID, id, model, requested, output, duration, video, at)
 		require.NoError(t, err)
 	}
+	setFirstTokenTiming := func(id string, stream, websocket bool, firstToken int) {
+		t.Helper()
+		_, err := integrationDB.ExecContext(ctx, `UPDATE usage_logs
+			SET stream=$1, openai_ws_mode=$2, first_token_ms=$3 WHERE api_key_id=$4 AND request_id=$5`,
+			stream, websocket, firstToken, key.ID, id)
+		require.NoError(t, err)
+	}
 	logError := func(at time.Time, id, clientID, model, path, owner string, status int, limited bool) {
 		t.Helper()
 		_, err := integrationDB.ExecContext(ctx, `INSERT INTO ops_error_logs
@@ -57,6 +64,14 @@ func TestModelRequestMetricsRollingWindow(t *testing.T) {
 	usage(start.Add(-time.Millisecond), group.ID, "local:before", "upstream-model", &alias, 2000, &oneSecond, 0)
 	usage(end, group.ID, "local:after", "upstream-model", &alias, 2000, &oneSecond, 0)
 	usage(start.Add(time.Hour), group.ID, "client:partial", "upstream-model", &alias, 1000, &fourSeconds, 0)
+	setFirstTokenTiming("local:a", true, false, 400)
+	setFirstTokenTiming("local:b", false, true, 1000)
+	setFirstTokenTiming("local:other", false, false, 2000)
+	setFirstTokenTiming("client:partial", true, false, 1000)
+	usage(start, group.ID, "local:single-token", "no-timing", nil, 1, &oneSecond, 0)
+	setFirstTokenTiming("local:single-token", true, false, 500)
+	usage(start, group.ID, "local:no-output-interval", "no-timing", nil, 100, &oneSecond, 0)
+	setFirstTokenTiming("local:no-output-interval", true, false, oneSecond)
 	const chat = "/v1/chat/completions"
 	logError(start.Add(time.Hour), "partial", "partial", alias, chat, "provider", 502, false)
 	logError(start.Add(time.Hour), "partial", "partial", alias, chat, "provider", 502, false)
@@ -95,15 +110,23 @@ func TestModelRequestMetricsRollingWindow(t *testing.T) {
 	require.EqualValues(t, 2, model.Failed)
 	require.Equal(t, 1500.0, *model.AvgLatencyMs)
 	require.Equal(t, 30.0, *model.TokensPerSecond)
+	require.EqualValues(t, 2, model.StreamOutputSamples)
+	require.NotNil(t, model.StreamOutputTokensPerSecond)
+	require.Equal(t, 55.0, *model.StreamOutputTokensPerSecond)
 	require.Equal(t, []service.ModelRequestMetricBucket{
 		{Index: 0, Succeeded: 1}, {Index: 1, Succeeded: 2, Failed: 1}, {Index: 23, Failed: 1},
 	}, model.Buckets)
 	require.EqualValues(t, 1, byGroup[other.ID]["gpt-alias"].Succeeded)
 	require.EqualValues(t, 0, byGroup[other.ID]["gpt-alias"].Failed)
+	require.Nil(t, byGroup[other.ID]["gpt-alias"].StreamOutputTokensPerSecond)
+	require.Zero(t, byGroup[other.ID]["gpt-alias"].StreamOutputSamples)
+	require.Nil(t, byGroup[group.ID]["no-timing"].StreamOutputTokensPerSecond)
+	require.Zero(t, byGroup[group.ID]["no-timing"].StreamOutputSamples)
 	video := byGroup[group.ID][videoModel]
 	require.Equal(t, []service.ModelRequestMetricBucket{{Index: 2, Succeeded: 1, Failed: 1}}, video.Buckets)
 	require.Equal(t, 3900.0, *video.AvgLatencyMs)
 	require.Nil(t, video.TokensPerSecond)
+	require.Nil(t, video.StreamOutputTokensPerSecond)
 	wan := byGroup[group.ID]["wan-alias"]
 	require.Equal(t, []service.ModelRequestMetricBucket{{Index: 2, Failed: 1}}, wan.Buckets)
 	require.Nil(t, wan.AvgLatencyMs)
