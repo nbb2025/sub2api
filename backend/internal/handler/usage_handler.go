@@ -259,6 +259,31 @@ func (h *UsageHandler) List(c *gin.Context) {
 	response.Paginated(c, out, result.Total, page, pageSize)
 }
 
+// ModelRequestMetrics returns site-wide aggregates for the caller's available groups.
+func (h *UsageHandler) ModelRequestMetrics(c *gin.Context) {
+	subject, ok := middleware2.GetAuthSubjectFromContext(c)
+	if !ok {
+		response.Unauthorized(c, "User not authenticated")
+		return
+	}
+	if h.apiKeyService == nil || h.opsService == nil {
+		response.Error(c, http.StatusServiceUnavailable, "Model monitoring not available")
+		return
+	}
+	groups, err := h.apiKeyService.GetAvailableGroups(c.Request.Context(), subject.UserID)
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	metrics, err := h.opsService.GetModelRequestMetrics(c.Request.Context(), groups)
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	c.Header("Cache-Control", "private, no-store")
+	response.Success(c, metrics)
+}
+
 // ListErrors handles listing the current user's failed requests (redacted).
 // GET /api/v1/usage/errors
 func (h *UsageHandler) ListErrors(c *gin.Context) {

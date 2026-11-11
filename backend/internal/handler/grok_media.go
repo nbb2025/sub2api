@@ -604,6 +604,7 @@ func (h *OpenAIGatewayHandler) handleGrokMedia(c *gin.Context, endpoint service.
 		}
 		// Status poll OR content download can observe official done+video.url.
 		// Both paths share the same claim key so the customer is charged once.
+		observedAt := time.Now()
 		if endpoint == service.BailianEndpointStatus {
 			billResult, billingErr := prepareBailianCompletionBilling(taskStateCtx, h, apiKey, subject, requestID, result)
 			if billingErr != nil {
@@ -631,6 +632,7 @@ func (h *OpenAIGatewayHandler) handleGrokMedia(c *gin.Context, endpoint service.
 		} else if shouldRecordGrokMediaUsage(endpoint, requestModel, result) {
 			_ = recordGrokMediaUsage(c, h, reqLog, apiKey, subject, subscription, account, result, requestModel, body, requestID)
 		}
+		h.recordModelVideoOutcome(requestCtx, reqLog, apiKey, subject.UserID, requestID, result.VideoTaskOutcome, observedAt)
 		if endpoint.IsBailian() {
 			h.gatewayService.WriteBufferedMediaResponse(c, result)
 		}
@@ -639,6 +641,39 @@ func (h *OpenAIGatewayHandler) handleGrokMedia(c *gin.Context, endpoint service.
 			zap.Int("switch_count", switchCount),
 		)
 		return
+	}
+}
+
+// A successful status lookup can carry a failed video task. Keep the task
+// outcome separate from HTTP failures and from the billing claim.
+func (h *OpenAIGatewayHandler) recordModelVideoOutcome(parent context.Context, reqLog *zap.Logger, apiKey *service.APIKey, userID int64, taskID string, outcome service.VideoTaskOutcome, observedAt time.Time) {
+	if outcome == service.VideoTaskUnknown || apiKey.GroupID == nil || taskID == "" || h.opsService == nil || !h.opsService.IsMonitoringEnabled(parent) {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(parent), 2*time.Second)
+	defer cancel()
+	pending, err := h.gatewayService.LoadGrokVideoPendingBilling(ctx, taskID, userID, apiKey.ID)
+	if err != nil {
+		reqLog.Debug("model_video_outcome.lookup_failed", zap.Error(err))
+		return
+	}
+	if pending == nil {
+		return
+	}
+	model := firstNonEmptyString(pending.OriginalModel, pending.Model)
+	if model == "" {
+		return
+	}
+	var latency *int64
+	if duration := service.GrokVideoE2EDuration(pending.CreatedAt, observedAt); duration > 0 {
+		ms := duration.Milliseconds()
+		latency = &ms
+	}
+	if err := h.opsService.SaveModelVideoOutcome(ctx, service.ModelVideoOutcome{
+		GroupID: *apiKey.GroupID, APIKeyID: apiKey.ID, RequestID: service.StableGrokVideoBillingRequestID(taskID),
+		Model: model, Succeeded: outcome == service.VideoTaskSucceeded, CompletedAt: observedAt, LatencyMs: latency,
+	}); err != nil {
+		reqLog.Warn("model_video_outcome.save_failed", zap.Error(err))
 	}
 }
 

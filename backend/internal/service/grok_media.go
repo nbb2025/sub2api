@@ -771,7 +771,13 @@ func (s *OpenAIGatewayService) ForwardGrokMedia(
 	usage := grokMediaUsageFromResponse(endpoint, requestInfo, respBody)
 	resultModel := requestModel
 	resultBillingModel := requestModel
+	outcome := VideoTaskUnknown
 	if endpoint == GrokMediaEndpointVideoStatus {
+		if usage.VideoCount > 0 {
+			outcome = VideoTaskSucceeded
+		} else if gjson.GetBytes(respBody, "status").String() == "failed" {
+			outcome = VideoTaskFailed
+		}
 		// Status has no request body model; use upstream status fields when billable.
 		if m := strings.TrimSpace(usage.Model); m != "" {
 			resultModel = m
@@ -796,6 +802,7 @@ func (s *OpenAIGatewayService) ForwardGrokMedia(
 		ImageInputSize:       usage.ImageInputSize,
 		ImageOutputSizes:     usage.ImageOutputSizes,
 		VideoCount:           usage.VideoCount,
+		VideoTaskOutcome:     outcome,
 		VideoResolution:      usage.VideoResolution,
 		VideoDurationSeconds: usage.VideoDurationSeconds,
 	}, nil

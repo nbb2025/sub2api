@@ -62,12 +62,12 @@ jobs:
       - name: Backend unit regression
         working-directory: backend
         run: go test -tags=unit ./...
-      - name: Video and cache billing database integration
+      - name: Video, cache billing, and model metrics database integration
         working-directory: backend
         env:
           CI: 'true'
           SUB2API_TEST_POSTGRES_IMAGE: postgres:16-alpine
-        run: go test -tags=integration ./internal/repository -run 'TestBailian|TestUsageLogRepositoryCacheWriteTTLRoundTrip|TestChannelCacheWriteTTLPricesRoundTrip|TestMigrationsRunner' -count=1 -timeout=5m
+        run: go test -tags=integration ./internal/repository -run 'TestBailian|TestUsageLogRepositoryCacheWriteTTLRoundTrip|TestChannelCacheWriteTTLPricesRoundTrip|TestMigrationsRunner|TestModelRequestMetricsRollingWindow' -count=1 -timeout=5m
 
   build:
     needs: prepare
