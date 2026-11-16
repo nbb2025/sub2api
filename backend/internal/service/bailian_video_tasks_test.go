@@ -47,6 +47,14 @@ func (r *bailianWorkerStore) Apply(ctx context.Context, cmd *UsageBillingCommand
 	return r.openAIRecordUsageBillingRepoStub.Apply(ctx, cmd)
 }
 
+func (r *bailianWorkerStore) ApplyBatch(ctx context.Context, cmds []*UsageBillingCommand) ([]UsageBillingBatchOutcome, error) {
+	outcomes := make([]UsageBillingBatchOutcome, len(cmds))
+	for i, cmd := range cmds {
+		outcomes[i].Result, outcomes[i].Err = r.Apply(ctx, cmd)
+	}
+	return outcomes, nil
+}
+
 type bailianWorkerUserRepo struct{ UserRepository }
 
 func (bailianWorkerUserRepo) GetByID(_ context.Context, id int64) (*User, error) {
@@ -68,7 +76,9 @@ func TestBailianBackgroundSettlementPersistsUsageAndRetriesWithoutPollingAgain(t
 	account.Extra = map[string]any{"quota_limit": 100.0, "quota_daily_limit": 10.0}
 	logs := &openAIRecordUsageLogRepoStub{inserted: true}
 	store := &bailianWorkerStore{t: t, openAIRecordUsageBillingRepoStub: openAIRecordUsageBillingRepoStub{err: errors.New("temporary billing outage")}}
-	svc := newOpenAIRecordUsageServiceWithBillingRepoForTest(logs, store, &openAIRecordUsageUserRepoStub{}, &openAIRecordUsageSubRepoStub{}, nil)
+	lanes := NewUsageBillingLaneCombiner(store)
+	t.Cleanup(lanes.Stop)
+	svc := newOpenAIRecordUsageServiceWithBillingRepoForTest(logs, ProvideUsageBillingRepository(lanes), &openAIRecordUsageUserRepoStub{}, &openAIRecordUsageSubRepoStub{}, nil)
 	svc.userRepo = bailianWorkerUserRepo{}
 	svc.accountRepo = &openAIRecordUsageAccountRepoStub{account: account}
 	svc.cache = &bailianBillingStateCache{payload: map[string][]byte{}, claims: map[string]bool{}}
@@ -79,7 +89,8 @@ func TestBailianBackgroundSettlementPersistsUsageAndRetriesWithoutPollingAgain(t
 	task := &BailianVideoTask{TaskID: "bailian:wan-task", UserID: 92, APIKeyID: 91, GroupID: 90, AccountID: account.ID,
 		InboundEndpoint: "/v1/videos/generations",
 		QuotaPlatform:   PlatformBailian, LeaseToken: "lease-1", Pending: GrokVideoPendingBilling{Platform: PlatformBailian, Model: "wan-public", UpstreamModel: "wan3.0-video-prime", CreatedAt: time.Now().Add(-time.Minute).Format(time.RFC3339Nano), BailianPricing: snapshot}}
-	require.NoError(t, store.SaveBailianVideoTask(ctx, task))
+	require.True(t, svc.BailianVideoTaskStorageAvailable(), "billing lanes must preserve durable task storage")
+	require.NoError(t, svc.StoreBailianVideoTask(ctx, task))
 	keys := NewAPIKeyService(bailianWorkerKeyRepo{}, nil, nil, nil, nil, nil, svc.cfg)
 	svc.settleBailianVideoTask(ctx, keys, task)
 	require.Equal(t, "pending", store.state)
@@ -108,6 +119,7 @@ func TestBailianBackgroundSettlementPersistsUsageAndRetriesWithoutPollingAgain(t
 	}
 	// The lifecycle is reusable and joins its goroutine during shutdown.
 	svc.StartBailianVideoSettlement(keys)
+	require.NotNil(t, svc.bailianWorker, "billing lanes must not disable background settlement")
 	svc.StopBailianVideoSettlement()
 	svc.StopBailianVideoSettlement()
 }
