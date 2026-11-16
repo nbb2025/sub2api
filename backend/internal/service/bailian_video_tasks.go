@@ -46,7 +46,7 @@ type bailianVideoUsageObserver interface {
 }
 
 func (s *OpenAIGatewayService) PersistBailianVideoObservedUsage(ctx context.Context, taskID string, userID, keyID int64, usage *domain.VideoUsage) error {
-	if store, ok := s.usageBillingRepo.(bailianVideoUsageObserver); ok {
+	if store, ok := s.bailianTaskRepository().(bailianVideoUsageObserver); ok {
 		return store.ObserveBailianVideoUsage(ctx, grokVideoPendingBillingKey(taskID, userID, keyID), usage)
 	}
 	return nil
@@ -58,8 +58,17 @@ type bailianSettlementWorker struct {
 }
 
 func (s *OpenAIGatewayService) bailianTaskStore() BailianVideoTaskStore {
-	store, _ := s.usageBillingRepo.(BailianVideoTaskStore)
+	store, _ := s.bailianTaskRepository().(BailianVideoTaskStore)
 	return store
+}
+
+// Billing lanes serialize monetary commands. Task storage and observed usage
+// still belong to their SQL backend and must remain available to video workers.
+func (s *OpenAIGatewayService) bailianTaskRepository() UsageBillingRepository {
+	if lanes, ok := s.usageBillingRepo.(*UsageBillingLaneCombiner); ok {
+		return lanes.repo
+	}
+	return s.usageBillingRepo
 }
 
 func (s *OpenAIGatewayService) BailianVideoTaskStorageAvailable() bool {

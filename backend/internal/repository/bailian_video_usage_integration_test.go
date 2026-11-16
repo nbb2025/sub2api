@@ -26,9 +26,13 @@ func TestBailianVideoBillingPrecisionAndDedup(t *testing.T) {
 	group := mustCreateGroup(t, client, &service.Group{Name: "bailian-" + uuid.NewString(), Platform: service.PlatformBailian, RateMultiplier: 1.25, VideoPrice1080P: &price})
 	key := mustCreateApiKey(t, client, &service.APIKey{UserID: user.ID, Key: "sk-bailian-" + uuid.NewString(), Name: "wan", Quota: 100, GroupID: &group.ID})
 	account := mustCreateAccount(t, client, &service.Account{Name: "bailian-" + uuid.NewString(), Platform: service.PlatformBailian, Type: service.AccountTypeAPIKey})
+	task := "grok-video:bailian:" + uuid.NewString()
+	durableTask := &service.BailianVideoTask{TaskID: task, UserID: user.ID, APIKeyID: key.ID, GroupID: group.ID, AccountID: account.ID}
 	// RecordUsage manages its own SQL transaction, so this test cannot use an
 	// outer rollback. Remove only its fixtures before global dashboard suites run.
 	t.Cleanup(func() {
+		_, err := integrationDB.ExecContext(context.Background(), "DELETE FROM bailian_video_tasks WHERE task_key=$1", durableTask.StorageKey())
+		require.NoError(t, err, "clean up Bailian task fixture")
 		for _, row := range []struct {
 			query string
 			id    int64
@@ -50,13 +54,22 @@ func TestBailianVideoBillingPrecisionAndDedup(t *testing.T) {
 	logs := newUsageLogRepositoryWithSQL(client, integrationDB)
 	cfg := &config.Config{}
 	cfg.Default.RateMultiplier = 1
-	svc := service.NewOpenAIGatewayService(nil, logs, NewUsageBillingRepository(client, integrationDB), NewUserRepository(client, integrationDB), nil, nil, nil, cfg, nil, nil, service.NewBillingService(cfg, nil), nil, &service.BillingCacheService{}, nil, &service.DeferredService{}, nil, nil, nil, nil, nil, nil, nil)
+	lanes := service.NewUsageBillingLaneCombiner(NewUsageBillingRepository(client, integrationDB))
+	t.Cleanup(lanes.Stop)
+	svc := service.NewOpenAIGatewayService(nil, logs, service.ProvideUsageBillingRepository(lanes), NewUserRepository(client, integrationDB), nil, nil, nil, cfg, nil, nil, service.NewBillingService(cfg, nil), nil, &service.BillingCacheService{}, nil, &service.DeferredService{}, nil, nil, nil, nil, nil, nil, nil)
 	usage := &domain.VideoUsage{Provider: service.PlatformBailian, InputVideoDuration: json.Number("5.125000001"), OutputVideoDuration: json.Number("24.874999999"), Duration: json.Number("30"), Resolution: "1080p"}
-	task := "grok-video:bailian:" + uuid.NewString()
 	input := &service.OpenAIRecordUsageInput{Result: &service.OpenAIForwardResult{RequestID: task, ResponseID: task, Model: "wan3.0-video-prime", BillingModel: "wan3.0-video-prime", UpstreamModel: "wan3.0-video-prime", VideoCount: 1, VideoResolution: "1080p", VideoUsage: usage, Duration: time.Second}, APIKey: key, User: user, Account: account, QuotaPlatform: service.PlatformBailian, APIKeyService: keyService}
 	snapshot, err := svc.SnapshotBailianVideoPricing(ctx, key, account, "wan3.0-video-prime")
 	require.NoError(t, err)
 	input.Result.BailianVideoPricing = snapshot
+	durableTask.Pending = service.GrokVideoPendingBilling{Platform: service.PlatformBailian, Model: "wan3.0-video-prime", BailianPricing: snapshot}
+	require.True(t, svc.BailianVideoTaskStorageAvailable())
+	require.NoError(t, svc.StoreBailianVideoTask(ctx, durableTask))
+	require.NoError(t, svc.PersistBailianVideoObservedUsage(ctx, task, user.ID, key.ID, usage))
+	storedTask, err := NewUsageBillingRepository(client, integrationDB).(service.BailianVideoTaskStore).GetBailianVideoTask(ctx, durableTask.StorageKey())
+	require.NoError(t, err)
+	require.NotNil(t, storedTask)
+	require.Equal(t, usage, storedTask.Usage, "billing lanes must preserve authoritative usage in SQL")
 	want, err := service.CalculateBailianVideoCost(group, "wan3.0-video-prime", usage, 1.25)
 	require.NoError(t, err)
 	price, group.RateMultiplier = 99, 99 // A live config edit must not reprice the accepted job.
