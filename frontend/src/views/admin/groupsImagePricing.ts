@@ -16,7 +16,7 @@ export const defaultAllowImageGenerationForPlatform = (platform: string): boolea
   imageGenerationDefaultPlatforms.has(platform);
 
 export const supportsVideoPricingPlatform = (platform: string): boolean =>
-  platform === "grok" || platform === "bailian";
+  platform === "grok" || platform === "bailian" || platform === "video-lt";
 
 export const imagePricingI18nKey = (_platform: string, key: string): string =>
   `admin.groups.imagePricing.${key}`;

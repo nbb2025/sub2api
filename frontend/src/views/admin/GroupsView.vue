@@ -1066,7 +1066,7 @@
             {{ t(videoPricingI18nKey("title")) }}
           </label>
           <p class="text-xs text-gray-500 dark:text-gray-400 mb-3">
-            {{ t(createForm.platform === 'bailian' ? 'bailian.billingHint' : videoPricingI18nKey("description")) }}
+            {{ t(createForm.platform === 'video-lt' ? 'hfsyapi.billingHint' : createForm.platform === 'bailian' ? 'bailian.billingHint' : videoPricingI18nKey("description")) }}
           </p>
           <div class="mb-4">
             <label class="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
@@ -1094,13 +1094,13 @@
               placeholder="1"
             />
           </div>
-          <div class="grid grid-cols-3 gap-3">
+          <div v-if="createForm.platform !== 'video-lt'" class="grid grid-cols-3 gap-3">
             <div>
               <label class="input-label">480p ($/s)</label>
               <input
                 v-model.number="createForm.video_price_480p"
                 type="number"
-                :step="createForm.platform === 'bailian' ? '0.00000001' : '0.001'"
+                :step="createForm.platform === 'bailian' || createForm.platform === 'video-lt' ? '0.00000001' : '0.001'"
                 min="0"
                 class="input"
                 :placeholder="getVideoPricePlaceholder(createForm.platform, 'video_price_480p')"
@@ -1111,7 +1111,7 @@
               <input
                 v-model.number="createForm.video_price_720p"
                 type="number"
-                :step="createForm.platform === 'bailian' ? '0.00000001' : '0.001'"
+                :step="createForm.platform === 'bailian' || createForm.platform === 'video-lt' ? '0.00000001' : '0.001'"
                 min="0"
                 class="input"
                 :placeholder="getVideoPricePlaceholder(createForm.platform, 'video_price_720p')"
@@ -1122,7 +1122,7 @@
               <input
                 v-model.number="createForm.video_price_1080p"
                 type="number"
-                :step="createForm.platform === 'bailian' ? '0.00000001' : '0.001'"
+                :step="createForm.platform === 'bailian' || createForm.platform === 'video-lt' ? '0.00000001' : '0.001'"
                 min="0"
                 class="input"
                 :placeholder="getVideoPricePlaceholder(createForm.platform, 'video_price_1080p')"
@@ -1137,7 +1137,7 @@
               {{ t("admin.groups.videoPricing.modelOverridesTitle") }}
             </p>
             <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
-              {{ t(createForm.platform === 'bailian' ? 'bailian.modelPricesHint' : "admin.groups.videoPricing.modelOverridesDescription") }}
+              {{ t(createForm.platform === 'video-lt' ? 'hfsyapi.modelPricesHint' : createForm.platform === 'bailian' ? 'bailian.modelPricesHint' : "admin.groups.videoPricing.modelOverridesDescription") }}
             </p>
             <div class="mt-3 space-y-3">
               <div
@@ -1149,17 +1149,17 @@
                   {{ family.label }}
                 </div>
                 <label
-                  v-for="resolution in grokVideoPriceResolutions"
+                  v-for="resolution in videoModelPriceResolutions(createForm.platform, family.key)"
                   :key="resolution.key"
                   class="block"
                 >
                   <span class="mb-1 block text-xs text-gray-500 dark:text-gray-400">
-                    {{ resolution.label }} ($/s)
+                    {{ resolution.label }} ({{ family.key === 'minimax-h3' ? '$/request' : '$/s' }})
                   </span>
                   <input
                     v-model.number="createForm.video_model_prices[family.key][resolution.key]"
                     type="number"
-                    :step="createForm.platform === 'bailian' ? '0.00000001' : '0.001'"
+                    :step="createForm.platform === 'bailian' || createForm.platform === 'video-lt' ? '0.00000001' : '0.001'"
                     min="0"
                     class="input"
                     :data-testid="`create-grok-video-price-${family.key}-${resolution.key}`"
@@ -1169,9 +1169,9 @@
             </div>
           </div>
           <p class="mt-3 text-xs text-gray-500 dark:text-gray-400">
-            {{ t(createForm.platform === 'bailian' ? 'bailian.modeHint' : videoPricingI18nKey("modeHint")) }}
+            {{ t(createForm.platform === 'video-lt' ? 'hfsyapi.modeHint' : createForm.platform === 'bailian' ? 'bailian.modeHint' : videoPricingI18nKey("modeHint")) }}
           </p>
-          <div class="mt-2 rounded-lg bg-gray-50 p-3 text-xs text-gray-700 dark:bg-gray-800 dark:text-gray-300">
+          <div v-if="createForm.platform !== 'video-lt'" class="mt-2 rounded-lg bg-gray-50 p-3 text-xs text-gray-700 dark:bg-gray-800 dark:text-gray-300">
             <div class="mb-1 font-medium">
               {{ t(videoPricingI18nKey("finalPricePreview")) }}
             </div>
@@ -2733,7 +2733,7 @@
             {{ t(videoPricingI18nKey("title")) }}
           </label>
           <p class="text-xs text-gray-500 dark:text-gray-400 mb-3">
-            {{ t(editForm.platform === 'bailian' ? 'bailian.billingHint' : videoPricingI18nKey("description")) }}
+            {{ t(editForm.platform === 'video-lt' ? 'hfsyapi.billingHint' : editForm.platform === 'bailian' ? 'bailian.billingHint' : videoPricingI18nKey("description")) }}
           </p>
           <div class="mb-4">
             <label class="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
@@ -2761,13 +2761,13 @@
               placeholder="1"
             />
           </div>
-          <div class="grid grid-cols-3 gap-3">
+          <div v-if="editForm.platform !== 'video-lt'" class="grid grid-cols-3 gap-3">
             <div>
               <label class="input-label">480p ($/s)</label>
               <input
                 v-model.number="editForm.video_price_480p"
                 type="number"
-                :step="editForm.platform === 'bailian' ? '0.00000001' : '0.001'"
+                :step="editForm.platform === 'bailian' || editForm.platform === 'video-lt' ? '0.00000001' : '0.001'"
                 min="0"
                 class="input"
                 :placeholder="getVideoPricePlaceholder(editForm.platform, 'video_price_480p')"
@@ -2778,7 +2778,7 @@
               <input
                 v-model.number="editForm.video_price_720p"
                 type="number"
-                :step="editForm.platform === 'bailian' ? '0.00000001' : '0.001'"
+                :step="editForm.platform === 'bailian' || editForm.platform === 'video-lt' ? '0.00000001' : '0.001'"
                 min="0"
                 class="input"
                 :placeholder="getVideoPricePlaceholder(editForm.platform, 'video_price_720p')"
@@ -2789,7 +2789,7 @@
               <input
                 v-model.number="editForm.video_price_1080p"
                 type="number"
-                :step="editForm.platform === 'bailian' ? '0.00000001' : '0.001'"
+                :step="editForm.platform === 'bailian' || editForm.platform === 'video-lt' ? '0.00000001' : '0.001'"
                 min="0"
                 class="input"
                 :placeholder="getVideoPricePlaceholder(editForm.platform, 'video_price_1080p')"
@@ -2804,7 +2804,7 @@
               {{ t("admin.groups.videoPricing.modelOverridesTitle") }}
             </p>
             <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
-              {{ t(editForm.platform === 'bailian' ? 'bailian.modelPricesHint' : "admin.groups.videoPricing.modelOverridesDescription") }}
+              {{ t(editForm.platform === 'video-lt' ? 'hfsyapi.modelPricesHint' : editForm.platform === 'bailian' ? 'bailian.modelPricesHint' : "admin.groups.videoPricing.modelOverridesDescription") }}
             </p>
             <div class="mt-3 space-y-3">
               <div
@@ -2816,17 +2816,17 @@
                   {{ family.label }}
                 </div>
                 <label
-                  v-for="resolution in grokVideoPriceResolutions"
+                  v-for="resolution in videoModelPriceResolutions(editForm.platform, family.key)"
                   :key="resolution.key"
                   class="block"
                 >
                   <span class="mb-1 block text-xs text-gray-500 dark:text-gray-400">
-                    {{ resolution.label }} ($/s)
+                    {{ resolution.label }} ({{ family.key === 'minimax-h3' ? '$/request' : '$/s' }})
                   </span>
                   <input
                     v-model.number="editForm.video_model_prices[family.key][resolution.key]"
                     type="number"
-                    :step="editForm.platform === 'bailian' ? '0.00000001' : '0.001'"
+                    :step="editForm.platform === 'bailian' || editForm.platform === 'video-lt' ? '0.00000001' : '0.001'"
                     min="0"
                     class="input"
                     :data-testid="`edit-grok-video-price-${family.key}-${resolution.key}`"
@@ -2836,9 +2836,9 @@
             </div>
           </div>
           <p class="mt-3 text-xs text-gray-500 dark:text-gray-400">
-            {{ t(editForm.platform === 'bailian' ? 'bailian.modeHint' : videoPricingI18nKey("modeHint")) }}
+            {{ t(editForm.platform === 'video-lt' ? 'hfsyapi.modeHint' : editForm.platform === 'bailian' ? 'bailian.modeHint' : videoPricingI18nKey("modeHint")) }}
           </p>
-          <div class="mt-2 rounded-lg bg-gray-50 p-3 text-xs text-gray-700 dark:bg-gray-800 dark:text-gray-300">
+          <div v-if="editForm.platform !== 'video-lt'" class="mt-2 rounded-lg bg-gray-50 p-3 text-xs text-gray-700 dark:bg-gray-800 dark:text-gray-300">
             <div class="mb-1 font-medium">
               {{ t(videoPricingI18nKey("finalPricePreview")) }}
             </div>
@@ -4430,9 +4430,9 @@ import {
 } from "./groupsImagePricing";
 import {
   createVideoModelPricesForm,
-  grokVideoPriceResolutions,
   serializeVideoModelPrices,
   videoModelPriceFamilyRows,
+  videoModelPriceResolutions,
 } from "./groupsVideoModelPricing";
 
 const supportsLivePlatform = (platform: string): boolean =>
@@ -6969,7 +6969,8 @@ const saveSortOrder = async () => {
 };
 
 watch(() => createForm.platform, (platform) => {
-  if (platform === 'bailian') createForm.video_model_prices = createVideoModelPricesForm(createForm.video_model_prices, platform)
+  if (platform === 'bailian' || platform === 'video-lt') createForm.video_model_prices = createVideoModelPricesForm(createForm.video_model_prices, platform)
+  if (platform === 'video-lt' && !createForm.name.trim()) createForm.name = 'video-lt'
 })
 
 onMounted(() => {

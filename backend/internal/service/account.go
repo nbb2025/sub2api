@@ -1928,6 +1928,12 @@ func (a *Account) SupportsOpenAIEndpointCapability(capability OpenAIEndpointCapa
 	if a == nil {
 		return false
 	}
+	if a.Platform == PlatformHFsyAPI {
+		return capability == OpenAIEndpointCapabilityHFsyVideo && a.Type == AccountTypeAPIKey && strings.TrimSpace(a.GetCredential("api_key")) != ""
+	}
+	if capability == OpenAIEndpointCapabilityHFsyVideo {
+		return false
+	}
 	if a.Platform == PlatformBailian {
 		return (capability == "" || capability == OpenAIEndpointCapabilityBailianVideo) &&
 			a.Type == AccountTypeAPIKey && strings.TrimSpace(a.GetCredential("base_url")) != ""

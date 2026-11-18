@@ -16,7 +16,7 @@ import (
 var _ service.BailianVideoTaskStore = (*usageBillingRepository)(nil)
 
 func (r *usageBillingRepository) SaveBailianVideoTask(ctx context.Context, task *service.BailianVideoTask) error {
-	if task == nil || task.StorageKey() == "" || task.GroupID <= 0 || task.AccountID <= 0 || task.Pending.BailianPricing == nil {
+	if task == nil || task.StorageKey() == "" || task.GroupID <= 0 || task.AccountID <= 0 || task.Pending.DurableVideoPricing() == nil {
 		return errors.New("invalid Bailian task snapshot")
 	}
 	payload, err := json.Marshal(task)
@@ -36,7 +36,7 @@ func (r *usageBillingRepository) SaveBailianVideoTask(ctx context.Context, task 
 	if err != nil {
 		return err
 	}
-	if existing == nil || existing.GroupID != task.GroupID || existing.AccountID != task.AccountID || existing.Pending.Model != task.Pending.Model {
+	if existing == nil || existing.GroupID != task.GroupID || existing.AccountID != task.AccountID || existing.Pending.Model != task.Pending.Model || existing.Pending.Platform != task.Pending.Platform {
 		return errors.New("bailian task ID conflicts with a different accepted task")
 	}
 	return nil

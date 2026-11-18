@@ -61,3 +61,48 @@ func TestBailianTaskReadAfterQuotaExhaustionStillRequiresAuthentication(t *testi
 	router.ServeHTTP(w, req)
 	require.Equal(t, http.StatusTooManyRequests, w.Code, "Bailian aliases must not bypass Grok admission")
 }
+
+// HFsy result lookup stays authenticated after the accepted task consumes the quota.
+func TestHFsyVideoStatusReadAfterQuotaExhaustion(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	group := &service.Group{ID: 9, Platform: service.PlatformHFsyAPI, Status: service.StatusActive, Hydrated: true}
+	key := &service.APIKey{
+		ID: 12, UserID: 13, Key: "sk-hfsy-owned", Status: service.StatusAPIKeyQuotaExhausted,
+		User:  &service.User{ID: 13, Role: service.RoleUser, Status: service.StatusActive},
+		Group: group, GroupID: &group.ID,
+	}
+	repo := &stubApiKeyRepo{getByKey: func(context.Context, string) (*service.APIKey, error) {
+		copy := *key
+		return &copy, nil
+	}}
+	cfg := &config.Config{RunMode: config.RunModeStandard}
+	router := newAuthTestRouter(service.NewAPIKeyService(repo, nil, nil, nil, nil, nil, cfg), nil, cfg)
+	ok := func(c *gin.Context) { c.Status(http.StatusOK) }
+	router.GET("/v1/video/query/:task_id", ok)
+	router.GET("/v1/video/query", ok)
+	router.POST("/v1/video/query/:task_id", ok)
+	router.POST("/v1/video/query", ok)
+	router.GET("/v1/videos/:request_id", ok)
+	router.POST("/v1/video/create", ok)
+	for _, tc := range []struct {
+		method, path, platform, keyStatus string
+		want                              int
+	}{
+		{http.MethodGet, "/v1/video/query/owned", service.PlatformHFsyAPI, service.StatusAPIKeyQuotaExhausted, http.StatusOK},
+		{http.MethodGet, "/v1/video/query?id=owned", service.PlatformComposite, service.StatusAPIKeyQuotaExhausted, http.StatusOK},
+		{http.MethodPost, "/v1/video/query/owned", service.PlatformHFsyAPI, service.StatusAPIKeyQuotaExhausted, http.StatusOK},
+		{http.MethodPost, "/v1/video/query?id=owned", service.PlatformComposite, service.StatusAPIKeyQuotaExhausted, http.StatusOK},
+		{http.MethodGet, "/v1/videos/owned", service.PlatformHFsyAPI, service.StatusAPIKeyQuotaExhausted, http.StatusOK},
+		{http.MethodGet, "/v1/video/query/owned", service.PlatformGrok, service.StatusAPIKeyQuotaExhausted, http.StatusTooManyRequests},
+		{http.MethodGet, "/v1/video/query/owned", service.PlatformHFsyAPI, service.StatusDisabled, http.StatusUnauthorized},
+		{http.MethodPost, "/v1/video/query/owned", service.PlatformHFsyAPI, service.StatusDisabled, http.StatusUnauthorized},
+		{http.MethodPost, "/v1/video/create", service.PlatformHFsyAPI, service.StatusAPIKeyQuotaExhausted, http.StatusTooManyRequests},
+	} {
+		group.Platform, key.Status = tc.platform, tc.keyStatus
+		req := httptest.NewRequest(tc.method, tc.path, nil)
+		req.Header.Set("Authorization", "Bearer "+key.Key)
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+		require.Equal(t, tc.want, w.Code, w.Body.String())
+	}
+}

@@ -410,6 +410,17 @@ func (s *AccountTestService) TestAccountConnection(c *gin.Context, accountID int
 	if account.Platform == PlatformGrok {
 		return s.testGrokAccountConnection(c, account, modelID, prompt, mode, testOpts)
 	}
+	if account.Platform == PlatformHFsyAPI {
+		s.sendEvent(c, TestEvent{Type: "test_start", Model: modelID})
+		models, _, err := s.fetchUpstreamModelList(c.Request.Context(), account)
+		if err != nil {
+			s.sendEvent(c, TestEvent{Type: "error", Error: "HFsyAPI authentication/model-list check failed"})
+			return err
+		}
+		s.sendEvent(c, TestEvent{Type: "content", Text: fmt.Sprintf("HFsyAPI authenticated. %d supported video models are available.", len(models))})
+		s.sendEvent(c, TestEvent{Type: "test_complete", Success: true})
+		return nil
+	}
 	if account.Platform == PlatformBailian {
 		s.sendEvent(c, TestEvent{Type: "test_start", Model: modelID})
 		models, _, _, err := s.fetchBailianVideoModels(c.Request.Context(), account)

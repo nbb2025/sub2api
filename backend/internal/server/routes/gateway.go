@@ -91,6 +91,10 @@ func RegisterGatewayRoutes(
 		}
 	}
 	videoGenerationHandler := func(c *gin.Context) {
+		if getGroupPlatform(c) == service.PlatformHFsyAPI {
+			h.OpenAIGateway.HFsyVideo(c)
+			return
+		}
 		if getGroupPlatform(c) == service.PlatformBailian {
 			h.OpenAIGateway.BailianVideo(c)
 			return
@@ -111,6 +115,10 @@ func RegisterGatewayRoutes(
 		})
 	}
 	videoStatusHandler := func(c *gin.Context) {
+		if getGroupPlatform(c) == service.PlatformHFsyAPI {
+			h.OpenAIGateway.HFsyVideo(c)
+			return
+		}
 		if getGroupPlatform(c) == service.PlatformBailian {
 			h.OpenAIGateway.BailianVideo(c)
 			return
@@ -278,6 +286,11 @@ func RegisterGatewayRoutes(
 		// canonical /videos/generations route inside the Grok media forwarder.
 		gateway.POST("/videos", videoGenerationHandler)
 		gateway.POST("/videos/generations", videoGenerationHandler)
+		gateway.POST("/video/create", h.OpenAIGateway.HFsyVideo)
+		gateway.GET("/video/query/:task_id", h.OpenAIGateway.HFsyVideo)
+		gateway.GET("/video/query", h.OpenAIGateway.HFsyVideo)
+		gateway.POST("/video/query/:task_id", h.OpenAIGateway.HFsyVideo)
+		gateway.POST("/video/query", h.OpenAIGateway.HFsyVideo)
 		if len(workbenchAuth) > 0 && workbenchAuth[0] != nil {
 			chain := bailianWorkbenchSession(workbenchAuth[0])
 			gateway.POST("/wan/workbench/videos/generations", append(chain, videoGenerationHandler)...)

@@ -298,6 +298,8 @@ func defaultModelsListCandidateIDs(platform string) []string {
 		return xai.DefaultModelIDs()
 	case PlatformBailian:
 		return BailianVideoModelIDs()
+	case PlatformHFsyAPI:
+		return HFsyVideoModelIDs()
 	case PlatformOpenCodeGo:
 		return DefaultOpenCodeGoModelIDs()
 	case PlatformTypeSafe:

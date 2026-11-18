@@ -1,3 +1,4 @@
+import { hfsyVideoModels } from '@/constants/hfsyVideoModels'
 import { getProviderProfile } from '@/constants/platformCatalog'
 
 // =====================
@@ -519,6 +520,7 @@ export const commonErrorCodes = [
 export function getModelsByPlatform(platform: string): string[] {
   switch (platform) {
     case 'bailian': return ['wan3.0-video', 'wan3.0-video-prime']
+    case 'video-lt': return hfsyVideoModels.map(({ id }) => id)
     case 'openai': return openaiModels
     case 'anthropic':
     case 'claude': return claudeModels

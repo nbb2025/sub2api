@@ -9,6 +9,15 @@ import admin from './admin'
 import misc from './misc'
 
 export default {
+  hfsyapi: {
+    perRequest: '按次（视频）',
+    perSecond: '按秒（视频）',
+    outputSeconds: '提交时长',
+    baseUrlHint: '默认使用 https://www.hfsyapi.cn。连接测试只读取模型列表。',
+    billingHint: '为各模型填写美元单价。Seedance 按提交的输出秒数计费，MiniMax H3 每个成功任务计费一次。',
+    modelPricesHint: '同一分辨率可有不同价格。请按模型填写，Seedance 用 USD/秒，MiniMax H3 用 USD/次。',
+    modeHint: '提交时锁定价格和倍率，任务成功后自动结算。',
+  },
   bailian: {
     name: '阿里云百炼',
     baseUrlRequired: '请填写与 API Key 同地域、包含业务空间 ID 的百炼根地址',

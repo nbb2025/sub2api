@@ -181,7 +181,12 @@ func apiKeyAuthWithSubscription(apiKeyService *service.APIKeyService, subscripti
 			(apiKey.Group.Platform == service.PlatformBailian ||
 				(apiKey.Group.Platform == service.PlatformComposite && strings.HasPrefix(c.Request.URL.Path, "/api/v1/tasks/"))) &&
 			isBailianVideoTaskRead(c.Request.Method, c.Request.URL.Path)
-		skipBilling := c.Request.URL.Path == "/v1/usage" || billingInfoRequest || isAsyncImageTaskRead(c.Request.Method, c.Request.URL.Path) || bailianTaskRead
+		hfsyNativeRead := (c.Request.Method == http.MethodGet || c.Request.Method == http.MethodPost) && isHFsyNativeTaskRead(c.Request.URL.Path)
+		hfsyTaskRead := apiKey.Group != nil &&
+			((apiKey.Group.Platform == service.PlatformHFsyAPI || apiKey.Group.Platform == service.PlatformComposite) && hfsyNativeRead ||
+				apiKey.Group.Platform == service.PlatformHFsyAPI && strings.Contains(c.Request.URL.Path, "/videos/") &&
+					isBailianVideoTaskRead(c.Request.Method, c.Request.URL.Path))
+		skipBilling := c.Request.URL.Path == "/v1/usage" || billingInfoRequest || isAsyncImageTaskRead(c.Request.Method, c.Request.URL.Path) || bailianTaskRead || hfsyTaskRead
 
 		// ── 4. SimpleMode → early return ─────────────────────────────
 
@@ -350,6 +355,14 @@ func isAsyncImageTaskRead(method, path string) bool {
 		return false
 	}
 	return strings.HasPrefix(path, "/v1/images/tasks/") || strings.HasPrefix(path, "/images/tasks/")
+}
+
+func isHFsyNativeTaskRead(path string) bool {
+	if path == service.HFsyVideoQueryPath {
+		return true
+	}
+	id, ok := strings.CutPrefix(path, service.HFsyVideoQueryPath+"/")
+	return ok && service.HFsyVideoTaskKey(id) != ""
 }
 
 func isBailianVideoTaskRead(method, path string) bool {

@@ -41,6 +41,11 @@ type BailianVideoTaskStore interface {
 	UpdateBailianVideoTask(context.Context, *BailianVideoTask, string, time.Time) error
 }
 
+// IsDurableVideoTaskPlatform reports whether task settlement requires a persisted quote.
+func IsDurableVideoTaskPlatform(platform string) bool {
+	return platform == PlatformBailian || platform == PlatformHFsyAPI
+}
+
 type bailianVideoUsageObserver interface {
 	ObserveBailianVideoUsage(context.Context, string, *domain.VideoUsage) error
 }
@@ -174,7 +179,8 @@ func (s *OpenAIGatewayService) settleBailianVideoTask(parent context.Context, ke
 			slog.Warn("bailian task progress persistence failed", "api_key_id", task.APIKeyID)
 		}
 	}()
-	if task.Pending.BailianPricing == nil {
+	pricing := task.Pending.DurableVideoPricing()
+	if pricing == nil {
 		next = time.Now().Add(time.Minute)
 		return
 	}
@@ -204,13 +210,33 @@ func (s *OpenAIGatewayService) settleBailianVideoTask(parent context.Context, ke
 					defer slot.ReleaseFunc()
 				}
 			}
+			if task.Pending.Platform == PlatformHFsyAPI {
+				return s.ForwardHFsyVideo(ctx, nil, account, HFsyVideoEndpointStatus, task.TaskID, nil)
+			}
 			return s.ForwardBailianVideo(ctx, nil, account, BailianEndpointStatus, task.TaskID, nil)
 		}()
 		if err != nil {
 			if upstream, ok := err.(*BailianVideoUpstreamError); ok && upstream.RetryAfter > time.Minute {
 				next = time.Now().Add(upstream.RetryAfter)
 			}
+			if upstream, ok := err.(*HFsyVideoUpstreamError); ok && upstream.RetryAfter > time.Minute {
+				next = time.Now().Add(upstream.RetryAfter)
+			}
 			return
+		}
+		if task.Pending.Platform == PlatformHFsyAPI {
+			switch result.VideoTaskOutcome {
+			case VideoTaskFailed:
+				state = "failed"
+				return
+			case VideoTaskSucceeded:
+				result.VideoUsage, err = task.Pending.HFsyCompletedUsage()
+				if err != nil {
+					return
+				}
+			default:
+				return
+			}
 		}
 		if result.VideoUsage == nil {
 			var body struct {
@@ -235,15 +261,19 @@ func (s *OpenAIGatewayService) settleBailianVideoTask(parent context.Context, ke
 		next = time.Now().Add(time.Minute)
 		return
 	}
-	if account == nil {
-		account = &Account{ID: task.AccountID, Platform: PlatformBailian, Type: AccountTypeAPIKey}
+	platform := task.Pending.Platform
+	if platform == "" {
+		platform = PlatformBailian
 	}
-	group := &Group{ID: task.GroupID, Platform: PlatformBailian}
+	if account == nil {
+		account = &Account{ID: task.AccountID, Platform: platform, Type: AccountTypeAPIKey}
+	}
+	group := &Group{ID: task.GroupID, Platform: platform}
 	key := &APIKey{ID: task.APIKeyID, UserID: task.UserID, User: user, GroupID: &task.GroupID, Group: group}
 	if current, err := keys.GetByID(ctx, task.APIKeyID); err == nil {
 		key.Key = current.Key // Only for post-commit auth cache invalidation; never persisted.
 	}
-	billingModel := task.Pending.BailianPricing.BillingModels[task.Usage.Resolution]
+	billingModel := pricing.BillingModels[task.Usage.Resolution]
 	if billingModel == "" {
 		next = time.Now().Add(time.Minute)
 		return
@@ -251,13 +281,21 @@ func (s *OpenAIGatewayService) settleBailianVideoTask(parent context.Context, ke
 	result := &OpenAIForwardResult{RequestID: StableGrokVideoBillingRequestID(task.TaskID), ResponseID: task.TaskID,
 		Model: task.Pending.Model, BillingModel: billingModel, UpstreamModel: task.Pending.UpstreamModel,
 		VideoUsage: task.Usage, VideoCount: 1, VideoResolution: task.Usage.Resolution,
-		BailianVideoPricing: task.Pending.BailianPricing, Duration: GrokVideoE2EDuration(task.Pending.CreatedAt, time.Now())}
+		BailianVideoPricing: task.Pending.BailianPricing, HFsyVideoPricing: task.Pending.HFsyPricing,
+		Duration: GrokVideoE2EDuration(task.Pending.CreatedAt, time.Now())}
 	inboundEndpoint := task.InboundEndpoint
 	if inboundEndpoint == "" {
 		inboundEndpoint = BailianVideoCreatePath
 	}
+	upstreamEndpoint := "/api/v1/tasks"
+	if platform == PlatformHFsyAPI {
+		upstreamEndpoint = HFsyVideoQueryPath
+		if task.InboundEndpoint == "" {
+			inboundEndpoint = HFsyVideoCreatePath
+		}
+	}
 	err = s.RecordUsage(ctx, &OpenAIRecordUsageInput{Result: result, APIKey: key, User: user, Account: account,
-		InboundEndpoint: inboundEndpoint, UpstreamEndpoint: "/api/v1/tasks", QuotaPlatform: task.QuotaPlatform,
+		InboundEndpoint: inboundEndpoint, UpstreamEndpoint: upstreamEndpoint, QuotaPlatform: task.QuotaPlatform,
 		RequestPayloadHash: HashUsageRequestPayload([]byte(task.TaskID)), APIKeyService: keys,
 		ChannelUsageFields: ChannelUsageFields{OriginalModel: task.Pending.OriginalModel, ChannelMappedModel: task.Pending.Model}})
 	if err != nil {

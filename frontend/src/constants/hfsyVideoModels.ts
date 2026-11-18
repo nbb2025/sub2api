@@ -1,0 +1,15 @@
+export const hfsyVideoModels = [
+  { id: 'sd-2.5-480', resolution: '480p' },
+  { id: 'sd-2.5-720', resolution: '720p' },
+  { id: 'sd-2.5-1080', resolution: '1080p' },
+  { id: 'sd-2.5-flash-480', resolution: '480p' },
+  { id: 'sd-2.5-flash-720', resolution: '720p' },
+  { id: 'sd-2-fast-480', resolution: '480p' },
+  { id: 'sd-2-fast-720', resolution: '720p' },
+  { id: 'sd-2-mini-480', resolution: '480p' },
+  { id: 'sd-2-mini-720', resolution: '720p' },
+  { id: 'sd-2-vip', resolution: '480p' },
+  { id: 'sd-2-vip-480', resolution: '480p' },
+  { id: 'sd-2-vip-720', resolution: '720p' },
+  { id: 'minimax-h3', resolution: '720p' },
+] as const

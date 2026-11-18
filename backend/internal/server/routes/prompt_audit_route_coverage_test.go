@@ -44,6 +44,7 @@ func TestEveryGatewayPOSTRouteIsClassifiedForPromptAuditCoverage(t *testing.T) {
 		"/images/batches":                   {"batch_image_handler.go"},
 		"/videos":                           {"grok_media.go"},
 		"/videos/generations":               {"grok_media.go"},
+		"/video/create":                     {"grok_media.go"},
 		"/wan/workbench/videos/generations": {"grok_media.go"},
 		"/videos/edits":                     {"grok_media.go"},
 		"/videos/extensions":                {"grok_media.go"},
@@ -56,6 +57,8 @@ func TestEveryGatewayPOSTRouteIsClassifiedForPromptAuditCoverage(t *testing.T) {
 	excluded := map[string]string{
 		"/messages/count_tokens":     "tokenization only; it does not execute a model request",
 		"/images/batches/:id/cancel": "control-plane cancellation with no user prompt",
+		"/video/query":               "HFsy task lookup has no prompt",
+		"/video/query/:task_id":      "HFsy task lookup has no prompt",
 		"/stt":                       "speech transcription is not a text-generation prompt",
 		"/custom-voices":             "voice profile management has no model prompt",
 	}

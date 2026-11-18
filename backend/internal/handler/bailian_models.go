@@ -9,13 +9,17 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+func writeVideoProviderModelsList(c *gin.Context, platform string, ids []string) {
+	items := make([]gin.H, 0, len(ids))
+	for _, id := range ids {
+		items = append(items, gin.H{"id": id, "object": "model", "owned_by": platform})
+	}
+	c.JSON(http.StatusOK, gin.H{"object": "list", "data": items})
+}
+
 func writeBailianModelsList(c *gin.Context, ids []string) {
 	if c.Request.URL.Path != "/api/v1/models" {
-		items := make([]gin.H, 0, len(ids))
-		for _, id := range ids {
-			items = append(items, gin.H{"id": id, "object": "model", "owned_by": service.PlatformBailian})
-		}
-		c.JSON(http.StatusOK, gin.H{"object": "list", "data": items})
+		writeVideoProviderModelsList(c, service.PlatformBailian, ids)
 		return
 	}
 	page, size := 1, 20

@@ -83,14 +83,14 @@ func TestBailianHandlerTaskOwnershipAndBillingClaim(t *testing.T) {
 	subject, _ := middleware.GetAuthSubjectFromContext(c)
 	result := &service.OpenAIForwardResult{ResponseID: "bailian:wan-task", VideoCount: 1, VideoUsage: &domain.VideoUsage{Provider: service.PlatformBailian, InputVideoDuration: json.Number("5.125"), OutputVideoDuration: json.Number("6.375"), Duration: json.Number("11.5"), Resolution: "1080p"}}
 	for i := range 20 {
-		bill, err := prepareBailianCompletionBilling(context.Background(), h, key, subject, result.ResponseID, result)
+		bill, err := prepareDurableVideoCompletionBilling(context.Background(), h, key, subject, result.ResponseID, service.PlatformBailian, result)
 		require.NoError(t, err)
 		if i == 0 {
 			require.NotNil(t, bill)
 			require.Equal(t, "11.5", bill.VideoUsage.Duration.String())
 			require.Equal(t, "wan3.0-video-prime", bill.BillingModel)
 			// A lease alone is not evidence of a committed charge.
-			inflight, err := prepareBailianCompletionBilling(context.Background(), h, key, subject, result.ResponseID, result)
+			inflight, err := prepareDurableVideoCompletionBilling(context.Background(), h, key, subject, result.ResponseID, service.PlatformBailian, result)
 			require.Error(t, err)
 			require.Nil(t, inflight)
 			require.NoError(t, h.gatewayService.MarkBailianVideoSettled(context.Background(), result.ResponseID, subject.UserID, key.ID))

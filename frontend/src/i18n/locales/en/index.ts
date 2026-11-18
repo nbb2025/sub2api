@@ -9,6 +9,15 @@ import admin from './admin'
 import misc from './misc'
 
 export default {
+  hfsyapi: {
+    perRequest: 'Video per request',
+    perSecond: 'Video per second',
+    outputSeconds: 'Requested duration',
+    baseUrlHint: 'Defaults to https://www.hfsyapi.cn. The connection test only reads the model list.',
+    billingHint: 'Set a USD rate per model. Seedance bills the requested output seconds, and MiniMax H3 bills once per successful job.',
+    modelPricesHint: 'Enter rates by model in USD per second for Seedance and USD per request for MiniMax H3.',
+    modeHint: 'The gateway saves prices and multipliers when a job is submitted and settles successful jobs automatically.',
+  },
   bailian: {
     name: 'Alibaba Cloud Bailian',
     baseUrlRequired: 'Enter the Bailian origin containing your workspace ID, in the same region as the API key',

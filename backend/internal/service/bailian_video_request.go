@@ -128,11 +128,7 @@ func parseBailianVideoRequest(body []byte, allowInline bool) (GrokMediaRequestIn
 			return info, fmt.Errorf("too many %s items", kind)
 		}
 		value := item.Get("url")
-		validURL := validBailianMediaURL(kind, value.String())
-		if allowInline && !validURL {
-			validURL = validBailianWorkbenchMedia(kind, value.String())
-		}
-		if value.Type != gjson.String || !validURL {
+		if value.Type != gjson.String || !validBailianMediaURL(kind, value.String(), allowInline) {
 			return info, fmt.Errorf("invalid %s URL", kind)
 		}
 		if kind == "first_frame" || kind == "last_frame" || kind == "reference_image" {
@@ -169,20 +165,37 @@ func parseBailianVideoRequest(body []byte, allowInline bool) (GrokMediaRequestIn
 	return info, nil
 }
 
-func validBailianWorkbenchMedia(kind, raw string) bool {
+func validBailianMediaURL(kind, raw string, allowInlineAudioVideo bool) bool {
+	if strings.HasPrefix(raw, "data:") {
+		return validBailianInlineMedia(kind, raw, allowInlineAudioVideo)
+	}
+	u, err := url.ParseRequestURI(raw)
+	return err == nil && u.Hostname() != "" && u.User == nil && !strings.ContainsAny(raw, " \r\n\t") &&
+		(u.Scheme == "http" || u.Scheme == "https" || (kind != "link" && u.Scheme == "oss"))
+}
+
+func validBailianInlineMedia(kind, raw string, allowInlineAudioVideo bool) bool {
 	header, payload, ok := strings.Cut(raw, ",")
-	if !ok || payload == "" || strings.ContainsAny(payload, "\r\n") {
+	if !ok || payload == "" || strings.ContainsAny(payload, "\r\n\t ") {
 		return false
 	}
 	maxBytes := 0
 	switch kind {
+	case "first_frame", "last_frame", "reference_image":
+		switch header {
+		case "data:image/png;base64", "data:image/jpeg;base64", "data:image/webp;base64", "data:image/bmp;base64":
+			maxBytes = 20_000_000
+		}
 	case "reference_video":
-		if header == "data:video/mp4;base64" || header == "data:video/quicktime;base64" {
+		if allowInlineAudioVideo && (header == "data:video/mp4;base64" || header == "data:video/quicktime;base64") {
 			maxBytes = 100_000_000
 		}
 	case "reference_audio":
-		if header == "data:audio/wav;base64" || header == "data:audio/x-wav;base64" || header == "data:audio/mpeg;base64" || header == "data:audio/mp3;base64" {
-			maxBytes = 15_000_000
+		if allowInlineAudioVideo {
+			switch header {
+			case "data:audio/wav;base64", "data:audio/x-wav;base64", "data:audio/mpeg;base64", "data:audio/mp3;base64":
+				maxBytes = 15_000_000
+			}
 		}
 	}
 	if maxBytes == 0 || len(payload) > base64.StdEncoding.EncodedLen(maxBytes) {
@@ -190,20 +203,6 @@ func validBailianWorkbenchMedia(kind, raw string) bool {
 	}
 	decoded, err := io.Copy(io.Discard, base64.NewDecoder(base64.StdEncoding.Strict(), strings.NewReader(payload)))
 	return err == nil && decoded > 0 && decoded <= int64(maxBytes)
-}
-
-func validBailianMediaURL(kind, raw string) bool {
-	if strings.HasPrefix(raw, "data:image/") && (kind == "first_frame" || kind == "last_frame" || kind == "reference_image") {
-		header, payload, ok := strings.Cut(raw, ",")
-		if !ok || !strings.HasSuffix(header, ";base64") || payload == "" {
-			return false
-		}
-		_, err := base64.StdEncoding.DecodeString(payload)
-		return err == nil
-	}
-	u, err := url.Parse(raw)
-	return err == nil && u.Host != "" && u.User == nil &&
-		(u.Scheme == "http" || u.Scheme == "https" || (kind != "link" && u.Scheme == "oss"))
 }
 
 func bailianUsesOSS(body []byte) bool { return bytes.Contains(body, []byte(`oss://`)) }

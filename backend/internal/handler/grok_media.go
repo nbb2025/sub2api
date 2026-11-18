@@ -62,6 +62,11 @@ func (h *OpenAIGatewayHandler) handleGrokMedia(c *gin.Context, endpoint service.
 		platform = service.PlatformBailian
 		noAccountCode, noAccountMessage = "bailian_no_eligible_account", "No eligible Bailian video accounts"
 	}
+	if endpoint.IsHFsyVideo() {
+		platform = service.PlatformHFsyAPI
+		noAccountCode, noAccountMessage = "hfsyapi_no_eligible_account", "No eligible HFsyAPI video accounts"
+	}
+	durableVideo := service.IsDurableVideoTaskPlatform(platform)
 	streamStarted := false
 	defer h.recoverResponsesPanic(c, &streamStarted)
 
@@ -123,6 +128,15 @@ func (h *OpenAIGatewayHandler) handleGrokMedia(c *gin.Context, endpoint service.
 			return
 		}
 	}
+	var hfsyRequest *service.HFsyVideoRequest
+	if endpoint == service.HFsyVideoEndpointCreate {
+		hfsyRequest, err = service.ParseHFsyVideoRequest(body)
+		if err != nil {
+			h.errorResponse(c, http.StatusBadRequest, "invalid_request_error", err.Error())
+			return
+		}
+		requestInfo = hfsyRequest.MediaRequestInfo()
+	}
 	requestModel := requestInfo.Model
 	routingModel := service.NormalizeGrokMediaModelForEndpoint(endpoint, requestModel, requestInfo.HasInputImage())
 	if endpoint.IsGenerationRequest() && strings.TrimSpace(requestModel) == "" {
@@ -139,7 +153,7 @@ func (h *OpenAIGatewayHandler) handleGrokMedia(c *gin.Context, endpoint service.
 	setOpsEndpointContext(c, "", int16(service.RequestTypeSync))
 
 	if endpoint.IsGenerationRequest() {
-		if !endpoint.IsBailian() && !service.GroupAllowsImageGeneration(apiKey.Group) {
+		if !durableVideo && !service.GroupAllowsImageGeneration(apiKey.Group) {
 			h.errorResponse(c, http.StatusForbidden, "permission_error", service.ImageGenerationPermissionMessage())
 			return
 		}
@@ -174,7 +188,7 @@ func (h *OpenAIGatewayHandler) handleGrokMedia(c *gin.Context, endpoint service.
 		defer userReleaseFunc()
 	}
 
-	if endpoint != service.BailianEndpointStatus {
+	if endpoint != service.BailianEndpointStatus && endpoint != service.HFsyVideoEndpointStatus {
 		if err := h.billingCacheService.CheckBillingEligibility(c.Request.Context(), apiKey.User, apiKey, apiKey.Group, subscription, service.QuotaPlatform(c.Request.Context(), apiKey)); err != nil {
 			reqLog.Info("grok_media.billing_eligibility_check_failed", zap.Error(err))
 			status, code, message, retryAfter := billingErrorDetails(err)
@@ -187,16 +201,18 @@ func (h *OpenAIGatewayHandler) handleGrokMedia(c *gin.Context, endpoint service.
 	}
 
 	// 余额模式在途预留（与计费同口径估算；计费任务扣减余额缓存后才释放）。
-	inflightDone, inflightErr := reserveInflightBalance(c, h.billingCacheService, h.gatewayService, apiKey, subscription, grokMediaInflightEstimate(endpoint, routingModel, requestInfo, body))
-	if inflightErr != nil {
-		status, code, message, retryAfter := billingErrorDetails(inflightErr)
-		if retryAfter > 0 {
-			c.Header("Retry-After", strconv.Itoa(retryAfter))
+	if !endpoint.IsHFsyVideo() {
+		inflightDone, inflightErr := reserveInflightBalance(c, h.billingCacheService, h.gatewayService, apiKey, subscription, grokMediaInflightEstimate(endpoint, routingModel, requestInfo, body))
+		if inflightErr != nil {
+			status, code, message, retryAfter := billingErrorDetails(inflightErr)
+			if retryAfter > 0 {
+				c.Header("Retry-After", strconv.Itoa(retryAfter))
+			}
+			h.errorResponse(c, status, code, message)
+			return
 		}
-		h.errorResponse(c, status, code, message)
-		return
+		defer inflightDone()
 	}
-	defer inflightDone()
 
 	sessionSeed := body
 	if len(sessionSeed) == 0 && strings.TrimSpace(requestID) != "" {
@@ -209,7 +225,7 @@ func (h *OpenAIGatewayHandler) handleGrokMedia(c *gin.Context, endpoint service.
 		boundLookupAccountID, err = h.gatewayService.ResolveGrokMediaVideoRequestAccount(
 			c.Request.Context(), apiKey.GroupID, requestID, subject.UserID, apiKey.ID,
 		)
-		if endpoint.IsBailian() && (err != nil || boundLookupAccountID <= 0) {
+		if durableVideo && (err != nil || boundLookupAccountID <= 0) {
 			restored, restoreErr := h.gatewayService.RestoreBailianVideoTaskBinding(c.Request.Context(), requestID, apiKey, subject.UserID)
 			if restoreErr != nil {
 				h.errorResponse(c, http.StatusServiceUnavailable, "task_state_unavailable", "Video task ownership is temporarily unavailable; retry lookup")
@@ -379,7 +395,41 @@ func (h *OpenAIGatewayHandler) handleGrokMedia(c *gin.Context, endpoint service.
 				bailianPricing.SubscriptionID = &id
 			}
 		}
-		if endpoint.IsGenerationRequest() && !endpoint.IsSeedance() && !endpoint.IsBailian() {
+		var hfsyPricing *service.VideoTaskPricingSnapshot
+		if endpoint == service.HFsyVideoEndpointCreate {
+			if err := hfsyRequest.ValidateUpstreamModel(account.GetMappedModel(requestModel)); err != nil {
+				h.errorResponse(c, http.StatusBadRequest, "invalid_request_error", err.Error())
+				return
+			}
+			if !h.gatewayService.BailianVideoTaskStorageAvailable() {
+				h.errorResponse(c, http.StatusServiceUnavailable, "task_state_unavailable", "HFsyAPI durable task storage is unavailable")
+				return
+			}
+			var estimate float64
+			hfsyPricing, estimate, err = h.gatewayService.SnapshotHFsyVideoPricing(requestCtx, apiKey, account, hfsyRequest)
+			if err != nil {
+				h.errorResponse(c, http.StatusBadRequest, "billing_configuration_error", err.Error())
+				return
+			}
+			if subscription != nil && apiKey.Group.IsSubscriptionType() {
+				id := subscription.ID
+				hfsyPricing.SubscriptionID = &id
+			} else if estimate > 0 && h.billingCacheService.InflightReservationEnabled() {
+				reservation, reserveErr := h.billingCacheService.ReserveInflight(requestCtx, apiKey.User, apiKey.Group, subscription, estimate)
+				if reserveErr != nil {
+					status, code, message, retryAfter := billingErrorDetails(reserveErr)
+					if retryAfter > 0 {
+						c.Header("Retry-After", strconv.Itoa(retryAfter))
+					}
+					h.errorResponse(c, status, code, message)
+					return
+				}
+				if reservation != nil {
+					defer reservation.HandlerDone()
+				}
+			}
+		}
+		if endpoint.IsGenerationRequest() && !endpoint.IsSeedance() && !durableVideo {
 			eligible, eligibilityReason, eligibilityErr := h.ensureGrokMediaAccountEligibility(requestCtx, account)
 			if !eligible {
 				releaseAccount()
@@ -440,6 +490,13 @@ func (h *OpenAIGatewayHandler) handleGrokMedia(c *gin.Context, endpoint service.
 				}
 				return result, err
 			}
+			if endpoint.IsHFsyVideo() {
+				result, err := h.gatewayService.ForwardHFsyVideo(requestCtx, c, account, endpoint, requestID, hfsyRequest)
+				if result != nil && hfsyPricing != nil {
+					result.BillingModel = hfsyPricing.BillingModels[result.VideoResolution]
+				}
+				return result, err
+			}
 			return h.gatewayService.ForwardGrokMedia(requestCtx, c, account, endpoint, requestID, body, contentType)
 		}()
 
@@ -452,6 +509,20 @@ func (h *OpenAIGatewayHandler) handleGrokMedia(c *gin.Context, endpoint service.
 		service.SetOpsLatencyMs(c, service.OpsResponseLatencyMsKey, responseLatencyMs)
 
 		if err != nil {
+			var hfsyErr *service.HFsyVideoUpstreamError
+			if endpoint.IsHFsyVideo() && errors.As(err, &hfsyErr) {
+				switch hfsyErr.StatusCode {
+				case http.StatusBadRequest, http.StatusUnprocessableEntity:
+					h.errorResponse(c, hfsyErr.StatusCode, "invalid_request_error", firstNonEmptyString(hfsyErr.Message, "Upstream rejected the video request"))
+					return
+				case http.StatusTooManyRequests:
+					if hfsyErr.RetryAfter > 0 {
+						c.Header("Retry-After", strconv.FormatInt(int64((hfsyErr.RetryAfter+time.Second-1)/time.Second), 10))
+					}
+					h.errorResponse(c, http.StatusTooManyRequests, "rate_limit_error", "Upstream video rate limit reached")
+					return
+				}
+			}
 			var failoverErr *service.UpstreamFailoverError
 			if errors.As(err, &failoverErr) {
 				if failoverClientGone(c) {
@@ -529,7 +600,7 @@ func (h *OpenAIGatewayHandler) handleGrokMedia(c *gin.Context, endpoint service.
 
 		h.gatewayService.ReportOpenAIAccountScheduleResult(account, grokMediaScheduleModel(account, routingModel, result), true, nil)
 		taskStateCtx := requestCtx
-		if endpoint.IsBailian() {
+		if durableVideo {
 			// An accepted paid job must retain its owner/snapshot even if the
 			// client disconnects immediately after the upstream response.
 			var cancel context.CancelFunc
@@ -537,13 +608,17 @@ func (h *OpenAIGatewayHandler) handleGrokMedia(c *gin.Context, endpoint service.
 			defer cancel()
 		}
 		if isGrokVideoCreateEndpoint(endpoint) && strings.TrimSpace(result.ResponseID) != "" {
-			if endpoint.IsBailian() {
+			// One accepted snapshot is used for both the durable worker and client lookups.
+			pending := service.GrokVideoPendingBilling{
+				Platform: platform, Model: requestModel, BillingModel: firstNonEmptyString(result.BillingModel, requestModel),
+				UpstreamModel: result.UpstreamModel, VideoResolution: result.VideoResolution, VideoDurationSeconds: result.VideoDurationSeconds,
+				OriginalModel: clientRequestedModel(c, requestModel), CreatedAt: videoCreateStartedAt,
+				BailianPricing: bailianPricing, HFsyPricing: hfsyPricing,
+			}
+			if durableVideo {
 				task := &service.BailianVideoTask{TaskID: result.ResponseID, UserID: subject.UserID, APIKeyID: apiKey.ID,
 					GroupID: *apiKey.GroupID, AccountID: account.ID, QuotaPlatform: service.QuotaPlatform(c.Request.Context(), apiKey),
-					InboundEndpoint: GetInboundEndpoint(c),
-					Pending: service.GrokVideoPendingBilling{Platform: platform, Model: requestModel, BillingModel: result.BillingModel,
-						UpstreamModel: result.UpstreamModel, VideoResolution: result.VideoResolution, VideoDurationSeconds: result.VideoDurationSeconds,
-						OriginalModel: clientRequestedModel(c, requestModel), CreatedAt: videoCreateStartedAt, BailianPricing: bailianPricing}}
+					InboundEndpoint: GetInboundEndpoint(c), Pending: pending}
 				if err := h.gatewayService.StoreBailianVideoTask(taskStateCtx, task); err != nil {
 					if retryErr := h.gatewayService.StoreBailianVideoTask(taskStateCtx, task); retryErr != nil {
 						h.errorResponse(c, http.StatusServiceUnavailable, "task_state_unavailable", "Video task was accepted upstream, but durable state could not be saved; do not resubmit generation")
@@ -559,7 +634,7 @@ func (h *OpenAIGatewayHandler) handleGrokMedia(c *gin.Context, endpoint service.
 					zap.String("request_id", result.ResponseID),
 					zap.Error(err),
 				)
-				if endpoint.IsBailian() {
+				if durableVideo {
 					if retryErr := h.gatewayService.BindGrokMediaVideoRequestAccount(taskStateCtx, apiKey.GroupID, result.ResponseID, subject.UserID, apiKey.ID, account.ID); retryErr != nil {
 						h.errorResponse(c, http.StatusServiceUnavailable, "task_state_unavailable", "Video task was accepted upstream, but gateway ownership could not be saved; do not resubmit generation")
 						return
@@ -569,18 +644,6 @@ func (h *OpenAIGatewayHandler) handleGrokMedia(c *gin.Context, endpoint service.
 			// Defer billing until status polling observes video.url. Persist create-time
 			// model/duration/resolution so status can still price if upstream omits them.
 			// Retry once: missing pending causes silent underpricing (status omits resolution).
-			pending := service.GrokVideoPendingBilling{
-				Platform:             platform,
-				Model:                requestModel,
-				BillingModel:         firstNonEmptyString(result.BillingModel, requestModel),
-				UpstreamModel:        result.UpstreamModel,
-				VideoResolution:      result.VideoResolution,
-				VideoDurationSeconds: result.VideoDurationSeconds,
-				OriginalModel:        clientRequestedModel(c, requestModel),
-				BailianPricing:       bailianPricing,
-				// Wall-clock start for usage duration_ms: create accepted → first done discovery.
-				CreatedAt: videoCreateStartedAt,
-			}
 			if err := h.gatewayService.StoreGrokVideoPendingBilling(taskStateCtx, result.ResponseID, subject.UserID, apiKey.ID, pending); err != nil {
 				reqLog.Warn("grok_media.store_video_pending_billing_failed_retrying",
 					zap.Int64("account_id", account.ID),
@@ -595,7 +658,7 @@ func (h *OpenAIGatewayHandler) handleGrokMedia(c *gin.Context, endpoint service.
 						zap.String("request_id", result.ResponseID),
 						zap.Error(err2),
 					)
-					if endpoint.IsBailian() {
+					if durableVideo {
 						h.errorResponse(c, http.StatusServiceUnavailable, "task_state_unavailable", "Video task was accepted upstream, but its billing snapshot could not be saved; do not resubmit generation")
 						return
 					}
@@ -605,10 +668,10 @@ func (h *OpenAIGatewayHandler) handleGrokMedia(c *gin.Context, endpoint service.
 		// Status poll OR content download can observe official done+video.url.
 		// Both paths share the same claim key so the customer is charged once.
 		observedAt := time.Now()
-		if endpoint == service.BailianEndpointStatus {
-			billResult, billingErr := prepareBailianCompletionBilling(taskStateCtx, h, apiKey, subject, requestID, result)
+		if endpoint == service.BailianEndpointStatus || endpoint == service.HFsyVideoEndpointStatus {
+			billResult, billingErr := prepareDurableVideoCompletionBilling(taskStateCtx, h, apiKey, subject, requestID, platform, result)
 			if billingErr != nil {
-				reqLog.Error("bailian_video.billing_state_unavailable", zap.Error(billingErr))
+				reqLog.Error("video_task.billing_state_unavailable", zap.Error(billingErr))
 				c.Header("Retry-After", "1")
 				h.errorResponse(c, http.StatusServiceUnavailable, "billing_state_unavailable", "Completed video usage could not be settled; retry task lookup")
 				return
@@ -633,7 +696,7 @@ func (h *OpenAIGatewayHandler) handleGrokMedia(c *gin.Context, endpoint service.
 			_ = recordGrokMediaUsage(c, h, reqLog, apiKey, subject, subscription, account, result, requestModel, body, requestID)
 		}
 		h.recordModelVideoOutcome(requestCtx, reqLog, apiKey, subject.UserID, requestID, result.VideoTaskOutcome, observedAt)
-		if endpoint.IsBailian() {
+		if durableVideo {
 			h.gatewayService.WriteBufferedMediaResponse(c, result)
 		}
 		reqLog.Debug("grok_media.request_completed",
@@ -692,6 +755,9 @@ func (h *OpenAIGatewayHandler) ensureGrokMediaAccountEligibility(ctx context.Con
 }
 
 func grokMediaRequiredCapability(endpoint service.GrokMediaEndpoint) service.OpenAIEndpointCapability {
+	if endpoint.IsHFsyVideo() {
+		return service.OpenAIEndpointCapabilityHFsyVideo
+	}
 	if endpoint.IsBailian() {
 		return service.OpenAIEndpointCapabilityBailianVideo
 	}
@@ -716,7 +782,7 @@ func grokMediaScheduleModel(account *service.Account, routingModel string, resul
 
 func isGrokVideoCreateEndpoint(endpoint service.GrokMediaEndpoint) bool {
 	switch endpoint {
-	case service.BailianEndpointCreate, service.SeedanceEndpointCreate, service.GrokMediaEndpointVideosGenerations,
+	case service.BailianEndpointCreate, service.HFsyVideoEndpointCreate, service.SeedanceEndpointCreate, service.GrokMediaEndpointVideosGenerations,
 		service.GrokMediaEndpointVideosEdits,
 		service.GrokMediaEndpointVideosExtensions:
 		return true
@@ -938,7 +1004,7 @@ func recordGrokMediaUsage(
 		}
 		return nil
 	}
-	if result != nil && result.VideoUsage != nil && result.VideoUsage.Provider == service.PlatformBailian {
+	if result != nil && result.VideoUsage != nil && service.IsDurableVideoTaskPlatform(result.VideoUsage.Provider) {
 		// A successful native result becomes visible only after durable billing.
 		// Keep settlement independent of client cancellation and queue dropping.
 		ctx, cancel := context.WithTimeout(context.WithoutCancel(c.Request.Context()), 10*time.Second)
@@ -950,7 +1016,7 @@ func recordGrokMediaUsage(
 			// SQL already committed. Release the short claim so a later poll can
 			// recover through the same stable SQL dedup key if the marker is lost.
 			_ = h.gatewayService.ReleaseGrokVideoBilling(ctx, videoTaskID, subject.UserID, apiKey.ID)
-			reqLog.Warn("bailian_video.settled_marker_failed", zap.Error(err))
+			reqLog.Warn("video_task.settled_marker_failed", zap.Error(err))
 		}
 		return nil
 	}

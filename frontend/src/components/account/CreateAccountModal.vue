@@ -171,6 +171,20 @@
           </button>
           <button
             type="button"
+            data-testid="platform-hfsyapi"
+            @click="form.platform = 'video-lt'"
+            :class="[
+              'flex flex-1 items-center justify-center gap-2 rounded-md px-4 py-2.5 text-sm font-medium transition-all',
+              form.platform === 'video-lt'
+                ? 'bg-white text-primary-600 shadow-sm dark:bg-dark-600 dark:text-primary-400'
+                : 'text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-200'
+            ]"
+          >
+            <PlatformIcon platform="video-lt" size="sm" />
+            HFsyAPI
+          </button>
+          <button
+            type="button"
             @click="selectTypeSafePlatform()"
             :class="[
               'flex flex-1 items-center justify-center gap-2 rounded-md px-4 py-2.5 text-sm font-medium transition-all',
@@ -1520,6 +1534,7 @@
             :required="form.platform === 'bailian'"
           />
           <p v-if="form.platform === 'bailian'" class="input-hint">{{ t('bailian.baseUrlHint') }}</p>
+          <p v-else-if="form.platform === 'video-lt'" class="input-hint">{{ t('hfsyapi.baseUrlHint') }}</p>
           <p v-else-if="baseUrlHint" class="input-hint">{{ baseUrlHint }}</p>
           <GrokBaseUrlPresets
             v-if="form.platform === 'grok'"
@@ -4317,6 +4332,8 @@ const apiKeyBaseUrlPlaceholder = computed(() => {
   switch (form.platform) {
     case 'bailian':
       return 'https://WORKSPACE_ID.cn-beijing.maas.aliyuncs.com'
+    case 'video-lt':
+      return 'https://www.hfsyapi.cn'
     case 'openai':
       return 'https://api.openai.com'
     case 'gemini':
@@ -5204,6 +5221,12 @@ watch(
       accountCategory.value = 'apikey'
       modelRestrictionMode.value = 'whitelist'
       allowedModels.value = ['wan3.0-video', 'wan3.0-video-prime']
+    }
+    if (newPlatform === 'video-lt') {
+      apiKeyBaseUrl.value = 'https://www.hfsyapi.cn'
+      accountCategory.value = 'apikey'
+      modelRestrictionMode.value = 'whitelist'
+      allowedModels.value = getModelsByPlatform('video-lt')
     }
     if (newPlatform === 'typesafe') {
       accountCategory.value = 'apikey'
@@ -6175,6 +6198,8 @@ const handleSubmit = async () => {
   const defaultBaseUrl =
     form.platform === 'bailian'
       ? ''
+      : form.platform === 'video-lt'
+      ? 'https://www.hfsyapi.cn'
       : form.platform === 'openai'
       ? 'https://api.openai.com'
       : form.platform === 'gemini'

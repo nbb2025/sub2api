@@ -29,8 +29,9 @@ type BufferedMediaResponse struct {
 
 // Freeze the accepted job's tariff. A later price/rate edit must not change a
 // retry's durable billing fingerprint or reprice work already submitted.
-type BailianVideoPricingSnapshot struct {
+type VideoTaskPricingSnapshot struct {
 	Prices                map[string]float64 `json:"prices"`
+	PerRequest            bool               `json:"per_request,omitempty"`
 	BillingModels         map[string]string  `json:"billing_models"`
 	RateMultiplier        float64            `json:"rate_multiplier"`
 	AccountRateMultiplier float64            `json:"account_rate_multiplier"`
@@ -44,13 +45,16 @@ type BailianVideoPricingSnapshot struct {
 	AccountWeeklyLimit    float64            `json:"account_weekly_limit"`
 }
 
-func (s *OpenAIGatewayService) SnapshotBailianVideoPricing(ctx context.Context, key *APIKey, account *Account, model string) (*BailianVideoPricingSnapshot, error) {
-	group := bailianVideoPricingGroup(key, s.cfg)
-	if group == nil || account == nil || key.User == nil {
-		return nil, fmt.Errorf("bailian video pricing requires a group, user and account")
+// Bailian snapshots retain their existing JSON representation on disk.
+type BailianVideoPricingSnapshot = VideoTaskPricingSnapshot
+
+func (s *OpenAIGatewayService) newVideoTaskPricingSnapshot(ctx context.Context, key *APIKey, account *Account) (*VideoTaskPricingSnapshot, error) {
+	if key == nil || key.Group == nil || key.User == nil || account == nil {
+		return nil, fmt.Errorf("video pricing requires a group, user and account")
 	}
+	group := key.Group
 	rate := s.ResolveUserGroupRateMultiplier(ctx, key.User.ID, group.ID, group.RateMultiplier)
-	snapshot := &BailianVideoPricingSnapshot{
+	snapshot := &VideoTaskPricingSnapshot{
 		Prices: map[string]float64{}, BillingModels: map[string]string{},
 		RateMultiplier: resolveVideoRateMultiplier(key, rate), AccountRateMultiplier: account.BillingRateMultiplier(),
 		KeyQuota: key.Quota, KeyRateLimit5h: key.RateLimit5h, KeyRateLimit1d: key.RateLimit1d, KeyRateLimit7d: key.RateLimit7d,
@@ -58,8 +62,17 @@ func (s *OpenAIGatewayService) SnapshotBailianVideoPricing(ctx context.Context, 
 	}
 	if math.IsNaN(snapshot.RateMultiplier) || math.IsInf(snapshot.RateMultiplier, 0) || snapshot.RateMultiplier < 0 ||
 		math.IsNaN(snapshot.AccountRateMultiplier) || math.IsInf(snapshot.AccountRateMultiplier, 0) || snapshot.AccountRateMultiplier < 0 {
-		return nil, fmt.Errorf("invalid Bailian video billing multiplier")
+		return nil, fmt.Errorf("invalid video billing multiplier")
 	}
+	return snapshot, nil
+}
+
+func (s *OpenAIGatewayService) SnapshotBailianVideoPricing(ctx context.Context, key *APIKey, account *Account, model string) (*BailianVideoPricingSnapshot, error) {
+	snapshot, err := s.newVideoTaskPricingSnapshot(ctx, key, account)
+	if err != nil {
+		return nil, err
+	}
+	group := bailianVideoPricingGroup(key, s.cfg)
 	for _, resolution := range []string{VideoBillingResolution480P, VideoBillingResolution720P, VideoBillingResolution1080P} {
 		billingModel, err := ResolveBailianVideoBillingModel(group, model, account.GetMappedModel(model), resolution)
 		if err != nil {
@@ -93,7 +106,7 @@ func bailianRetryAfter(raw string) time.Duration {
 	return 0
 }
 
-func (p *BailianVideoPricingSnapshot) billingGroup(resolution string) (*Group, error) {
+func (p *VideoTaskPricingSnapshot) billingGroup(resolution string) (*Group, error) {
 	if p == nil {
 		return nil, fmt.Errorf("bailian task pricing snapshot is unavailable")
 	}

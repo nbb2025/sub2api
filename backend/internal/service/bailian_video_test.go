@@ -49,12 +49,24 @@ func TestBailianNativeRequestCapabilities(t *testing.T) {
 		`{"model":"x","input":{"prompt":"x"},"parameters":{"audio":"false"}}`,
 		`{"model":"x","input":{"prompt":"x"},"parameters":{"resolution":"2K"}}`,
 		`{"model":"x","input":{"media":[{"type":"last_frame","url":"https://example.com/a.png"}]}}`,
+		`{"model":"x","input":{"media":[{"type":"reference_image","url":"data:image/gif;base64,AAAA"}]}}`,
+		`{"model":"x","input":{"media":[{"type":"first_frame","url":"data:image/png;base64,AB=="}]}}`,
+		`{"model":"x","input":{"media":[{"type":"first_frame","url":"data:image/png;base64,AA==\n"}]}}`,
 		`{"model":"x","input":{"media":[{"type":"first_frame","url":"https://example.com/a.png"},{"type":"reference_audio","url":"https://example.com/a.mp3"}]}}`,
 		`{"model":"x","input":{"media":[{"type":"file","url":"https://example.com/a.pdf"}]},"parameters":{"prompt_extend":false}}`,
 	} {
 		_, err := ParseBailianVideoRequest([]byte(body))
 		require.Error(t, err, body)
 	}
+}
+
+func TestBailianInlineImageSizeLimit(t *testing.T) {
+	for _, mime := range []string{"png", "jpeg", "webp", "bmp"} {
+		require.True(t, validBailianMediaURL("first_frame", "data:image/"+mime+";base64,AAAA", false))
+	}
+	prefix := "data:image/png;base64," + strings.Repeat("AAAA", 6_666_666)
+	require.True(t, validBailianMediaURL("last_frame", prefix+"AAA=", false), "20 MB should be accepted")
+	require.False(t, validBailianMediaURL("last_frame", prefix+"AAAA", false), "20 MB plus one byte should be rejected")
 }
 
 func TestBailianNativeForwardingAndOSS(t *testing.T) {

@@ -29,10 +29,10 @@ func TestBailianWorkbenchInlineMediaKeepsPublicParserURLOnly(t *testing.T) {
 		}
 	}
 	for _, raw := range []string{"data:video/mp4;base64,", "data:video/mp4;base64,A", "data:video/mp4;base64,AB==", "data:video/mp4;base64,AAAA\n", "data:audio/wav;base64,AAAA", "data:video/webm;base64,AAAA"} {
-		require.False(t, validBailianWorkbenchMedia("reference_video", raw), raw)
+		require.False(t, validBailianInlineMedia("reference_video", raw, true), raw)
 	}
-	require.False(t, validBailianWorkbenchMedia("file", "data:video/mp4;base64,AAAA"))
-	require.False(t, validBailianWorkbenchMedia("reference_audio", "data:audio/wav;base64,"+strings.Repeat("AAAA", 5_000_001)))
+	require.False(t, validBailianInlineMedia("file", "data:video/mp4;base64,AAAA", true))
+	require.False(t, validBailianInlineMedia("reference_audio", "data:audio/wav;base64,"+strings.Repeat("AAAA", 5_000_001), true))
 }
 
 func TestBailianWorkbenchForwardingPreservesInlineMediaAndStripsSession(t *testing.T) {

@@ -261,7 +261,7 @@ func (s *AccountTestService) SyncUpstreamModelCatalog(ctx context.Context, accou
 		return nil, newUpstreamModelSyncInternalError("Failed to save upstream model catalog", saveErr)
 	}
 	catalog := &UpstreamModelCatalog{Models: models, Metadata: make(map[string]UpstreamModelMetadata)}
-	if account != nil && account.Platform == PlatformBailian {
+	if account != nil && IsDurableVideoTaskPlatform(account.Platform) {
 		// Video models do not have text-context/token capability metadata. Do not
 		// guess it or send account credentials to a text-model registry.
 		catalog.DiscoverySource = "upstream"
@@ -846,6 +846,15 @@ func (s *AccountTestService) fetchUpstreamModelListRequest(ctx context.Context, 
 		}
 		return nil, nil, req, newUpstreamModelSyncUpstreamError("Upstream model list response was not valid JSON", err)
 	}
+	if account.Platform == PlatformHFsyAPI {
+		allowed := models[:0]
+		for _, id := range models {
+			if _, ok := hfsyVideoModels[id]; ok {
+				allowed = append(allowed, id)
+			}
+		}
+		models = allowed
+	}
 	if len(models) == 0 {
 		return nil, nil, req, newUpstreamModelSyncUpstreamError("Upstream returned no supported models", nil)
 	}
@@ -1003,6 +1012,22 @@ func (s *AccountTestService) buildUpstreamModelsRequest(ctx context.Context, acc
 		return s.buildAntigravityAPIKeyModelsRequest(ctx, account)
 	case account.IsGrok():
 		return s.buildGrokUpstreamModelsRequest(ctx, account)
+	case account.Platform == PlatformHFsyAPI:
+		if account.Type != AccountTypeAPIKey || strings.TrimSpace(account.GetCredential("api_key")) == "" {
+			return nil, newUpstreamModelSyncConfigError("HFsyAPI model sync requires an API key account", nil)
+		}
+		base, err := s.validateUpstreamBaseURL(hfsyAPIBaseURL(account))
+		if err != nil {
+			return nil, newUpstreamModelSyncConfigError("Invalid HFsyAPI base URL", err)
+		}
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, buildOpenAIModelsURL(base), nil)
+		if err != nil {
+			return nil, newUpstreamModelSyncConfigError("Invalid HFsyAPI model list URL", err)
+		}
+		req.Header.Set("Authorization", "Bearer "+strings.TrimSpace(account.GetCredential("api_key")))
+		req.Header.Set("Accept", "application/json")
+		account.ApplyHeaderOverrides(req.Header)
+		return req, nil
 	case account.IsOpenAI() || account.IsMultiProtocolAPIKey():
 		// 多协议 API Key 供应商（国产厂商与聚合平台）复用 OpenAI /v1/models 探测。
 		return s.buildOpenAIUpstreamModelsRequest(ctx, account)

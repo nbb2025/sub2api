@@ -164,34 +164,40 @@ func (s *OpenAIGatewayService) RecordUsage(ctx context.Context, input *OpenAIRec
 		s.rateLimitService.ResetOpenAI403Counter(ctx, input.Account.ID)
 	}
 
+	durableVideoUsage := result.VideoUsage != nil && IsDurableVideoTaskPlatform(result.VideoUsage.Provider)
+	taskPricing := result.BailianVideoPricing
+	if durableVideoUsage && result.VideoUsage.Provider == PlatformHFsyAPI {
+		taskPricing = result.HFsyVideoPricing
+	}
+
 	apiKey := input.APIKey
-	if result.VideoUsage != nil && result.BailianVideoPricing != nil && apiKey != nil {
+	if result.VideoUsage != nil && taskPricing != nil && apiKey != nil {
 		copy := *apiKey
-		copy.Quota = result.BailianVideoPricing.KeyQuota
-		copy.RateLimit5h = result.BailianVideoPricing.KeyRateLimit5h
-		copy.RateLimit1d = result.BailianVideoPricing.KeyRateLimit1d
-		copy.RateLimit7d = result.BailianVideoPricing.KeyRateLimit7d
+		copy.Quota = taskPricing.KeyQuota
+		copy.RateLimit5h = taskPricing.KeyRateLimit5h
+		copy.RateLimit1d = taskPricing.KeyRateLimit1d
+		copy.RateLimit7d = taskPricing.KeyRateLimit7d
 		apiKey = &copy
 	}
 	user := input.User
 	account := input.Account
-	if result.VideoUsage != nil && result.BailianVideoPricing != nil && account != nil {
+	if result.VideoUsage != nil && taskPricing != nil && account != nil {
 		copy := *account
 		copy.Extra = make(map[string]any, len(account.Extra)+3)
 		for key, value := range account.Extra {
 			copy.Extra[key] = value
 		}
-		copy.Extra["quota_limit"] = result.BailianVideoPricing.AccountQuotaLimit
-		copy.Extra["quota_daily_limit"] = result.BailianVideoPricing.AccountDailyLimit
-		copy.Extra["quota_weekly_limit"] = result.BailianVideoPricing.AccountWeeklyLimit
+		copy.Extra["quota_limit"] = taskPricing.AccountQuotaLimit
+		copy.Extra["quota_daily_limit"] = taskPricing.AccountDailyLimit
+		copy.Extra["quota_weekly_limit"] = taskPricing.AccountWeeklyLimit
 		account = &copy
 	}
 	subscription := input.Subscription
-	if result.VideoUsage != nil && result.BailianVideoPricing != nil {
+	if result.VideoUsage != nil && taskPricing != nil {
 		// Settle against the subscription that admitted this job, including a
 		// task completing after that subscription expired or was replaced.
 		subscription = nil
-		if id := result.BailianVideoPricing.SubscriptionID; id != nil {
+		if id := taskPricing.SubscriptionID; id != nil {
 			subscription = &UserSubscription{ID: *id, UserID: user.ID}
 			if apiKey.GroupID != nil {
 				subscription.GroupID = *apiKey.GroupID
@@ -243,8 +249,8 @@ func (s *OpenAIGatewayService) RecordUsage(ctx context.Context, input *OpenAIRec
 	pricingAt := openAIUsagePricingAt(input)
 	multiplier, imageMultiplier := computePeakAwareMultipliers(apiKey, baseMultiplier, pricingAt)
 	videoMultiplier := resolveVideoRateMultiplier(apiKey, baseMultiplier)
-	if result.VideoUsage != nil && result.BailianVideoPricing != nil {
-		videoMultiplier = result.BailianVideoPricing.RateMultiplier
+	if result.VideoUsage != nil && taskPricing != nil {
+		videoMultiplier = taskPricing.RateMultiplier
 	}
 
 	var cost *CostBreakdown
@@ -365,8 +371,8 @@ func (s *OpenAIGatewayService) RecordUsage(ctx context.Context, input *OpenAIRec
 
 	// Determine billing type
 	isSubscriptionBilling := subscription != nil && apiKey.Group != nil && apiKey.Group.IsSubscriptionType()
-	if result.VideoUsage != nil && result.BailianVideoPricing != nil {
-		isSubscriptionBilling = result.BailianVideoPricing.SubscriptionID != nil
+	if result.VideoUsage != nil && taskPricing != nil {
+		isSubscriptionBilling = taskPricing.SubscriptionID != nil
 	}
 	billingType := BillingTypeBalance
 	if isSubscriptionBilling {
@@ -376,8 +382,8 @@ func (s *OpenAIGatewayService) RecordUsage(ctx context.Context, input *OpenAIRec
 	// Create usage log
 	durationMs := int(result.Duration.Milliseconds())
 	accountRateMultiplier := account.BillingRateMultiplier()
-	if result.VideoUsage != nil && result.BailianVideoPricing != nil {
-		accountRateMultiplier = result.BailianVideoPricing.AccountRateMultiplier
+	if result.VideoUsage != nil && taskPricing != nil {
+		accountRateMultiplier = taskPricing.AccountRateMultiplier
 	}
 	requestID := resolveUsageBillingRequestID(ctx, result.RequestID)
 	if result.OpenAIWSMode {
@@ -541,9 +547,9 @@ func (s *OpenAIGatewayService) RecordUsage(ctx context.Context, input *OpenAIRec
 
 	simpleModeKeyRateLimitOnly := simpleModeKeyRateLimitBillingEnabled(s.cfg, apiKey)
 	if s.cfg != nil && s.cfg.RunMode == config.RunModeSimple && !simpleModeKeyRateLimitOnly {
-		if result.VideoUsage != nil && result.VideoUsage.Provider == PlatformBailian {
+		if durableVideoUsage {
 			if s.usageLogRepo == nil {
-				return errors.New("bailian usage repository is unavailable")
+				return errors.New("video usage repository is unavailable")
 			}
 			_, err := s.usageLogRepo.Create(ctx, usageLog)
 			if err == nil {
@@ -579,7 +585,7 @@ func (s *OpenAIGatewayService) RecordUsage(ctx context.Context, input *OpenAIRec
 	}, s.billingDeps(), s.usageBillingRepo)
 
 	if billingErr != nil {
-		if result.VideoUsage != nil && result.VideoUsage.Provider == PlatformBailian {
+		if durableVideoUsage {
 			// A failed native settlement is retryable. Do not insert a zero-cost
 			// row that would win the unique log key over a later paid retry.
 			return billingErr
@@ -588,9 +594,9 @@ func (s *OpenAIGatewayService) RecordUsage(ctx context.Context, input *OpenAIRec
 		writeUsageLogBestEffort(ctx, s.usageLogRepo, usageLog, "service.openai_gateway")
 		return billingErr
 	}
-	if result.VideoUsage != nil && result.VideoUsage.Provider == PlatformBailian {
+	if durableVideoUsage {
 		if s.usageLogRepo == nil {
-			return errors.New("bailian usage repository is unavailable")
+			return errors.New("video usage repository is unavailable")
 		}
 		// If log persistence fails after the monetary commit, lookup can retry
 		// through SQL billing dedup and repair the log without another debit.
@@ -663,6 +669,9 @@ func (s *OpenAIGatewayService) calculateOpenAIRecordUsageCost(
 ) (*CostBreakdown, error) {
 	billingModel := firstUsageBillingModel(billingModels)
 	if result != nil && result.VideoUsage != nil {
+		if result.VideoUsage.Provider == PlatformHFsyAPI {
+			return calculateHFsyVideoCost(result.HFsyVideoPricing, result.VideoUsage)
+		}
 		if result.BailianVideoPricing != nil {
 			group, err := result.BailianVideoPricing.billingGroup(result.VideoUsage.Resolution)
 			if err != nil {

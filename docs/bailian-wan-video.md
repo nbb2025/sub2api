@@ -31,6 +31,8 @@
 
 URL 统一使用 `/v1`，请求和响应 JSON 保持下文的百炼原生结构。任务 ID 仍取 `output.task_id`，视频 URL 仍取 `output.video_url`。
 
+iAgent 若转发到同一套 Sub2API，以下公开创建和查询路径可在两个域名间换用，沿用同一把 `bailian` 分组 Key、原生 JSON 和 `output.task_id`。各入口的请求体大小上限按各自配置执行。iAgent 创作台的本地 Base64 另走登录专用入口，创建时的 Key 与登录账号须属于同一用户。
+
 旧原生路径继续兼容，复用同一任务归属、价格快照、结算和数据库去重：
 
 | 方法 | 兼容路径 | 功能 |
@@ -173,7 +175,7 @@ type Wan3TaskStatus =
 ```
 
 1. 创建提交上述 JSON，保存 `output.task_id`。单次请求只生成一个视频；批量提交由调用方管理多个任务，API 不定义 `n` 批量参数。
-2. 使用同一站点和 Key 轮询 `GET /v1/videos/{encodeURIComponent(taskId)}`。`taskId` 是原生 ID，不加内部 `bailian:` 前缀。建议间隔 3–5 秒；429 遵循 `Retry-After`，不要并发密集轮询。
+2. 使用创建时的 Key 轮询 `GET /v1/videos/{encodeURIComponent(taskId)}`。路径里的 `taskId` 直接使用原生 `output.task_id`。建议间隔 3–5 秒，收到 429 后按 `Retry-After` 等待。
 3. `PENDING` / `RUNNING` 继续等待；`SUCCEEDED` 读取 `output.video_url`；`FAILED` / `CANCELED` / `UNKNOWN` 停止自动轮询并展示错误或状态，不自动重新创建任务。API 不提供进度百分比，不应根据等待时间伪造。
 4. 原生失败可能在 HTTP 200 的 `output.code` / `output.message` 中；也要处理顶层 `code` / `message` 及网关 `error.type` / `error.message`。HTTP 503 且 `error.type=billing_state_unavailable` 时，只重试同一任务查询。
 5. 文生、首尾帧、参考生成、编辑和延长使用同一个创建路径。编辑/延长通过参考视频与提示词表达，不另发 Grok 的 `/videos/edits` 或 `/videos/extensions`。

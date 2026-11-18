@@ -41,11 +41,11 @@ func (e GrokMediaEndpoint) RequiresRequestBody() bool {
 }
 
 func (e GrokMediaEndpoint) IsVideoLookupRequest() bool {
-	return e == GrokMediaEndpointVideoStatus || e == GrokMediaEndpointVideoContent || e == SeedanceEndpointStatus || e == SeedanceEndpointDelete || e == BailianEndpointStatus
+	return e == GrokMediaEndpointVideoStatus || e == GrokMediaEndpointVideoContent || e == SeedanceEndpointStatus || e == SeedanceEndpointDelete || e == BailianEndpointStatus || e == HFsyVideoEndpointStatus
 }
 
 func (e GrokMediaEndpoint) IsGenerationRequest() bool {
-	if e == SeedanceEndpointCreate || e == BailianEndpointCreate {
+	if e == SeedanceEndpointCreate || e == BailianEndpointCreate || e == HFsyVideoEndpointCreate {
 		return true
 	}
 	switch e {
@@ -355,10 +355,14 @@ func (s *OpenAIGatewayService) SelectMediaVideoRequestAccount(
 	}
 	ctx = s.withOpenAIGroupPrivacyRequirement(WithOpenAIProfitControlSuppressed(ctx), groupID)
 	scheduler := &defaultOpenAIAccountScheduler{service: s}
+	var capability OpenAIEndpointCapability
+	if platform == PlatformHFsyAPI {
+		capability = OpenAIEndpointCapabilityHFsyVideo
+	}
 	selection, _, err := scheduler.selectBySessionHash(ctx, OpenAIAccountScheduleRequest{
 		GroupID: groupID, Platform: platform, SessionHash: sessionHash,
 		StickyAccountID: accountID, PreserveStickyBinding: true, DisableStickyEscape: true,
-		RequestedModel: requestedModel, RequiredTransport: OpenAIUpstreamTransportHTTPSSE,
+		RequestedModel: requestedModel, RequiredTransport: OpenAIUpstreamTransportHTTPSSE, RequiredCapability: capability,
 		RequirePrivacySet: s.openAIGroupRequiresPrivacySet(ctx, groupID),
 	})
 	if err != nil {
@@ -385,11 +389,19 @@ type GrokVideoPendingBilling struct {
 	VideoDurationSeconds int                          `json:"video_duration_seconds,omitempty"`
 	OriginalModel        string                       `json:"original_model,omitempty"`
 	BailianPricing       *BailianVideoPricingSnapshot `json:"bailian_pricing,omitempty"`
+	HFsyPricing          *VideoTaskPricingSnapshot    `json:"hfsy_pricing,omitempty"`
 	// CreatedAt is when the gateway accepted the async create (RFC3339Nano UTC).
 	// duration_ms for deferred billing is measured from this instant until the
 	// first official done+video.url observation (status poll or content download),
 	// not the latency of that single discovery request alone.
 	CreatedAt string `json:"created_at,omitempty"`
+}
+
+func (p GrokVideoPendingBilling) DurableVideoPricing() *VideoTaskPricingSnapshot {
+	if p.Platform == PlatformHFsyAPI {
+		return p.HFsyPricing
+	}
+	return p.BailianPricing
 }
 
 // GrokVideoPendingCreatedAtNow formats a create-accept timestamp for pending billing.
@@ -464,7 +476,7 @@ func (s *OpenAIGatewayService) StoreGrokVideoPendingBilling(
 	if pending.VideoResolution != "" {
 		pending.VideoResolution = NormalizeVideoBillingResolutionOrDefault(pending.VideoResolution)
 	}
-	if pending.VideoDurationSeconds > 0 && pending.Platform != PlatformBailian {
+	if pending.VideoDurationSeconds > 0 && !IsDurableVideoTaskPlatform(pending.Platform) {
 		pending.VideoDurationSeconds = NormalizeVideoBillingDurationSecondsOrDefault(pending.VideoDurationSeconds)
 	}
 	// Always stamp create-accept time when missing so deferred duration_ms is E2E.

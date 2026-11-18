@@ -141,12 +141,17 @@
 
         <template #cell-billing_mode="{ row }">
           <span class="inline-flex items-center rounded px-2 py-0.5 text-xs font-medium" :class="getBillingModeBadgeClass(getDisplayBillingMode(row))">
-            {{ row.video_usage?.provider === 'bailian' ? t('bailian.billingMode') : getBillingModeLabel(getDisplayBillingMode(row), t) }}
+            {{ row.video_usage?.provider === 'video-lt'
+              ? t(row.upstream_model === 'minimax-h3' || row.model === 'minimax-h3' ? 'hfsyapi.perRequest' : 'hfsyapi.perSecond')
+              : row.video_usage?.provider === 'bailian' ? t('bailian.billingMode') : getBillingModeLabel(getDisplayBillingMode(row), t) }}
           </span>
         </template>
 
         <template #cell-tokens="{ row }">
-          <div v-if="row.video_usage" class="space-y-1 text-xs tabular-nums" data-testid="bailian-video-usage">
+          <div v-if="row.video_usage?.provider === 'video-lt'" class="text-xs tabular-nums" data-testid="hfsy-video-usage">
+            {{ t('hfsyapi.outputSeconds') }}: {{ row.video_usage.output_video_duration }}s · {{ row.video_usage.resolution }}
+          </div>
+          <div v-else-if="row.video_usage" class="space-y-1 text-xs tabular-nums" data-testid="bailian-video-usage">
             <div>{{ t('bailian.inputSeconds') }}: {{ row.video_usage.input_video_duration }}s</div>
             <div>{{ t('bailian.outputSeconds') }}: {{ row.video_usage.output_video_duration }}s</div>
             <div class="font-medium text-gray-900 dark:text-white">{{ t('bailian.billableSeconds') }}: {{ row.video_usage.duration }}s · {{ row.video_usage.resolution }}</div>

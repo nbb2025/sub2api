@@ -1,3 +1,5 @@
+import { hfsyVideoModels } from '@/constants/hfsyVideoModels'
+
 export const grokVideoPriceResolutions = [
   { key: '480p', label: '480p' },
   { key: '720p', label: '720p' },
@@ -49,7 +51,7 @@ export function createVideoModelPricesForm(
     }
   }
 
-  for (const { key } of platform === 'bailian' ? bailianVideoPriceFamilies : grokVideoPriceFamilies) {
+  for (const { key } of videoPriceFamilies(platform)) {
     form[key] ??= emptyTiers()
   }
   return form
@@ -72,7 +74,25 @@ export function serializeVideoModelPrices(form: VideoModelPricesForm): VideoMode
   return result
 }
 
+function videoPriceFamilies(platform: string) {
+  if (platform === 'video-lt') return hfsyVideoModels.map(({ id }) => ({ key: id, label: id }))
+  return platform === 'bailian' ? bailianVideoPriceFamilies : grokVideoPriceFamilies
+}
+
+export function videoModelPriceResolutions(platform: string, model: string) {
+  if (platform !== 'video-lt') return grokVideoPriceResolutions
+  const spec = hfsyVideoModels.find(({ id }) => id === model)
+  return spec ? grokVideoPriceResolutions.filter(({ key }) => key === spec.resolution) : grokVideoPriceResolutions
+}
+
 export function videoModelPriceFamilyRows(form: VideoModelPricesForm, platform = 'grok') {
+  if (platform === 'video-lt') {
+    const families = videoPriceFamilies(platform)
+    return [...families, ...Object.keys(form)
+      .filter(key => !families.some(family => family.key === key) &&
+        Object.values(form[key] ?? {}).some(value => normalizePrice(value) !== null))
+      .sort().map(key => ({ key, label: key }))]
+  }
   if (platform === 'bailian') {
     return [...bailianVideoPriceFamilies, ...Object.keys(form)
       .filter(key => !bailianVideoPriceFamilies.some(family => family.key === key) &&

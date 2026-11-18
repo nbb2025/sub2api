@@ -29,8 +29,15 @@ func (h *OpenAIGatewayHandler) BailianVideo(c *gin.Context) {
 	h.handleGrokMedia(c, endpoint, taskID)
 }
 
-func prepareBailianCompletionBilling(ctx context.Context, h *OpenAIGatewayHandler, key *service.APIKey, subject middleware.AuthSubject, taskID string, result *service.OpenAIForwardResult) (*service.OpenAIForwardResult, error) {
-	if result == nil || result.VideoUsage == nil || result.VideoCount != 1 {
+func prepareDurableVideoCompletionBilling(ctx context.Context, h *OpenAIGatewayHandler, key *service.APIKey, subject middleware.AuthSubject, taskID, platform string, result *service.OpenAIForwardResult) (*service.OpenAIForwardResult, error) {
+	if result == nil {
+		return nil, nil
+	}
+	if platform == service.PlatformHFsyAPI {
+		if result.VideoTaskOutcome != service.VideoTaskSucceeded {
+			return nil, nil
+		}
+	} else if result.VideoUsage == nil || result.VideoCount != 1 {
 		return nil, nil
 	}
 	pending, err := h.gatewayService.LoadGrokVideoPendingBilling(ctx, taskID, subject.UserID, key.ID)
@@ -39,28 +46,37 @@ func prepareBailianCompletionBilling(ctx context.Context, h *OpenAIGatewayHandle
 			pending, err = h.gatewayService.LoadGrokVideoPendingBilling(ctx, taskID, subject.UserID, key.ID)
 		}
 	}
-	if err != nil || pending == nil || pending.Platform != service.PlatformBailian {
-		return nil, fmt.Errorf("bailian task billing snapshot is unavailable")
+	if err != nil || pending == nil || pending.Platform != platform {
+		return nil, fmt.Errorf("video task billing snapshot is unavailable")
 	}
-	if pending.BailianPricing == nil || pending.BailianPricing.BillingModels[result.VideoUsage.Resolution] == "" {
-		return nil, fmt.Errorf("bailian task price snapshot is unavailable for the output resolution")
+	usage := result.VideoUsage
+	if platform == service.PlatformHFsyAPI {
+		usage, err = pending.HFsyCompletedUsage()
+		if err != nil {
+			return nil, err
+		}
 	}
-	if err := h.gatewayService.PersistBailianVideoObservedUsage(ctx, taskID, subject.UserID, key.ID, result.VideoUsage); err != nil {
+	pricing := pending.DurableVideoPricing()
+	if pricing == nil || pricing.BillingModels[usage.Resolution] == "" {
+		return nil, fmt.Errorf("video task price snapshot is unavailable for the output resolution")
+	}
+	if err := h.gatewayService.PersistBailianVideoObservedUsage(ctx, taskID, subject.UserID, key.ID, usage); err != nil {
 		return nil, err
 	}
 	claimed, settled, err := h.gatewayService.ClaimBailianVideoBilling(ctx, taskID, subject.UserID, key.ID)
 	if err != nil {
-		return nil, fmt.Errorf("bailian task billing claim is unavailable")
+		return nil, fmt.Errorf("video task billing claim is unavailable")
 	}
 	if settled {
 		return nil, nil
 	}
 	if !claimed {
-		return nil, fmt.Errorf("bailian task settlement is in progress; retry lookup")
+		return nil, fmt.Errorf("video task settlement is in progress; retry lookup")
 	}
 	merged := *result
-	merged.Model, merged.BillingModel = pending.Model, pending.BailianPricing.BillingModels[result.VideoUsage.Resolution]
-	merged.BailianVideoPricing = pending.BailianPricing
+	merged.Model, merged.BillingModel = pending.Model, pricing.BillingModels[usage.Resolution]
+	merged.BailianVideoPricing, merged.HFsyVideoPricing = pending.BailianPricing, pending.HFsyPricing
+	merged.VideoUsage, merged.VideoCount, merged.VideoResolution = usage, 1, usage.Resolution
 	merged.UpstreamModel = firstNonEmptyString(pending.UpstreamModel, result.UpstreamModel)
 	merged.RequestID = service.StableGrokVideoBillingRequestID(taskID)
 	merged.ResponseID = taskID
