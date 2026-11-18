@@ -2,9 +2,14 @@ package service
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
+	"os"
+	"os/exec"
+	"regexp"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/pkg/antigravity"
 	"github.com/stretchr/testify/require"
@@ -75,6 +80,22 @@ func signedThinkingHistoryBody() []byte {
 }
 
 func TestFilterThinkingBlocksSignedHistorySkipsDecode(t *testing.T) {
+	// AllocsPerRun also counts allocations from background goroutines started
+	// by other tests in this package. Measure the filter in a fresh process.
+	const childEnv = "SUB2API_SIGNED_THINKING_ALLOC_TEST_CHILD"
+	if os.Getenv(childEnv) != "1" {
+		ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
+		defer cancel()
+
+		executable, err := os.Executable()
+		require.NoError(t, err)
+		cmd := exec.CommandContext(ctx, executable, "-test.run=^"+regexp.QuoteMeta(t.Name())+"$", "-test.count=1")
+		cmd.Env = append(os.Environ(), childEnv+"=1")
+		output, err := cmd.CombinedOutput()
+		require.NoError(t, err, "isolated allocation test failed:\n%s", output)
+		return
+	}
+
 	body := signedThinkingHistoryBody()
 	allocs := testing.AllocsPerRun(5, func() {
 		got := filterThinkingBlocksInternal(body, false)
