@@ -30,6 +30,7 @@ type hfsyVideoModelSpec struct {
 	minSeconds, maxSeconds          int
 	maxPrompt                       int
 	maxImages, maxVideos, maxAudios int
+	maxImageBytes                   int64
 	frames, requireTags             bool
 	requireImage, videoNeedsImage   bool
 	ultrawide                       bool
@@ -51,7 +52,7 @@ var hfsyVideoModels = map[string]hfsyVideoModelSpec{
 	"sd-2-vip":         hfsyVIP480,
 	"sd-2-vip-480":     hfsyVIP480,
 	"sd-2-vip-720":     {resolution: "720p", minSeconds: 5, maxSeconds: 15, maxPrompt: 10000, maxImages: 9, maxVideos: 3, maxAudios: 3, videoNeedsImage: true, ultrawide: true, requireTags: true},
-	"minimax-h3":       {resolution: "720p", minSeconds: 5, maxSeconds: 15, maxPrompt: 7000, maxImages: 9, maxAudios: 3, requireImage: true, perRequest: true},
+	"minimax-h3":       {resolution: "720p", minSeconds: 5, maxSeconds: 15, maxPrompt: 7000, maxImages: 9, maxAudios: 3, maxImageBytes: 20_000_000, requireImage: true, perRequest: true},
 }
 
 var hfsyReferenceTag = regexp.MustCompile(`(?i)@(image|video|audio|图片|视频|音频)?([0-9]+)\b`)

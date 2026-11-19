@@ -78,6 +78,38 @@ func hfsyMediaTestContext(ctx context.Context, method, taskID, jsonBody string) 
 	return c, w
 }
 
+func TestVideoReferenceUploadAuthorizationChecksGroupAndModel(t *testing.T) {
+	h, _, _, _ := newHFsyMediaTestHandler(t)
+	for _, tc := range []struct {
+		platform, model string
+		status          int
+		videoAllowed    bool
+	}{
+		{service.PlatformHFsyAPI, "minimax-h3", http.StatusOK, false},
+		{service.PlatformHFsyAPI, "sd-2.5-480", http.StatusOK, true},
+		{service.PlatformHFsyAPI, "unknown", http.StatusForbidden, false},
+		{service.PlatformOpenAI, "sd-2.5-480", http.StatusForbidden, false},
+		{service.PlatformHFsyAPI, "", http.StatusOK, false},
+	} {
+		c, w := hfsyMediaTestContext(context.Background(), http.MethodGet, "", "")
+		c.Request = httptest.NewRequest(http.MethodGet, "/v1/media/upload-authorization?model="+tc.model, nil)
+		key, _ := middleware.GetAPIKeyFromContext(c)
+		key.Group.Platform = tc.platform
+		h.AuthorizeVideoReferenceUpload(nil)(c)
+		require.Equal(t, tc.status, w.Code, w.Body.String())
+		if tc.status == http.StatusOK {
+			require.Equal(t, key.ID, gjson.Get(w.Body.String(), "key_id").Int())
+			require.Equal(t, tc.videoAllowed, gjson.Get(w.Body.String(), "video_allowed").Bool())
+		}
+	}
+	c, w := hfsyMediaTestContext(context.Background(), http.MethodGet, "", "")
+	c.Request = httptest.NewRequest(http.MethodGet, "/v1/media/upload-authorization?model=sd-2.5-480", nil)
+	key, _ := middleware.GetAPIKeyFromContext(c)
+	key.Group.ModelAllowlist = service.GroupModelAllowlist{Enabled: true, Models: []string{"minimax-h3"}}
+	h.AuthorizeVideoReferenceUpload(nil)(c)
+	require.Equal(t, http.StatusForbidden, w.Code)
+}
+
 func TestHFsyVideoTaskOwnershipAndCompletion(t *testing.T) {
 	h, slots, upstream, usage := newHFsyMediaTestHandler(t)
 	upstream.call = func(req *http.Request, accountID int64) (*http.Response, error) {
