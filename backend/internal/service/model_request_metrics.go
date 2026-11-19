@@ -78,10 +78,11 @@ func modelRequestStatus(succeeded, failed int64, buckets []ModelRequestMetricBuc
 	for _, bucket := range buckets {
 		var state string
 		switch {
-		case bucket.Succeeded > 0 && bucket.Failed > 0:
-			state = "mixed"
-		case bucket.Succeeded > 0:
+		// At least nine successes for each failure is a success rate of 90% or higher.
+		case bucket.Succeeded > 0 && bucket.Succeeded/9 >= bucket.Failed:
 			state = "success"
+		case bucket.Succeeded > 0:
+			state = "mixed"
 		case bucket.Failed > 0:
 			state = "failure"
 		default:

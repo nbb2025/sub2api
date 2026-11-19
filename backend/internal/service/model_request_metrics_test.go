@@ -54,6 +54,24 @@ func TestModelRequestMetricsScopesSharedCacheByGroup(t *testing.T) {
 	require.Equal(t, 1, repo.queries)
 }
 
+func TestModelRequestMetricsClassifiesBucketsAtNinetyPercent(t *testing.T) {
+	status := modelRequestStatus(9019, 1007, []ModelRequestMetricBucket{
+		{Index: 0, Succeeded: 10, Failed: 1},
+		{Index: 1, Succeeded: 9, Failed: 1},
+		{Index: 2, Succeeded: 8999, Failed: 1001}, // 89.99%, even if rounded to 90.0%.
+		{Index: 3, Failed: 4},
+		{Index: 4},
+		{Index: 5, Succeeded: 1},
+	})
+	require.Equal(t, []ModelRequestStatusBucket{
+		{Index: 0, State: "success"},
+		{Index: 1, State: "success"},
+		{Index: 2, State: "mixed"},
+		{Index: 3, State: "failure"},
+		{Index: 5, State: "success"},
+	}, status.Buckets)
+}
+
 func TestModelRequestMetricsResponseExposesOnlyDisplayAggregates(t *testing.T) {
 	start := time.Date(2026, time.November, 10, 0, 0, 0, 0, time.UTC)
 	latency, overallRate, streamRate := 2356.8, 22.1234, 48.642
