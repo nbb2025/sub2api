@@ -76,7 +76,7 @@ func TestClassifyUpstreamTransportError(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			got := classifyUpstreamTransportError(tc.err).Persistent
+			got := classifyUpstreamTransportError(tc.err, nil).Persistent
 			if got != tc.persistent {
 				t.Fatalf("classifyUpstreamTransportError(%q).Persistent = %v, want %v", errString(tc.err), got, tc.persistent)
 			}

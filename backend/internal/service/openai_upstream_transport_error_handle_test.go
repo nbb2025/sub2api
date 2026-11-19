@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"syscall"
 	"testing"
 	"time"
 
@@ -41,6 +42,94 @@ func newOpenAITransportErrTestContext() (*gin.Context, *httptest.ResponseRecorde
 	return c, rec
 }
 
+func TestTransportCooldownForPoolModeTCPDialRefusal(t *testing.T) {
+	refused := &url.Error{
+		Op:  "Post",
+		URL: "http://relay:10982/v1/responses",
+		Err: &net.OpError{Op: "dial", Net: "tcp", Err: syscall.ECONNREFUSED},
+	}
+	tests := []struct {
+		name     string
+		err      error
+		poolMode bool
+		proxied  bool
+		cooldown bool
+	}{
+		{name: "pool dial refused", err: refused, poolMode: true},
+		{name: "ordinary dial refused", err: refused, cooldown: true},
+		{
+			name:     "pool proxy authentication failed",
+			err:      errors.New("socks connect tcp: username/password authentication failed"),
+			poolMode: true,
+			cooldown: true,
+		},
+		{
+			name:     "pool proxy connection refused",
+			err:      &net.OpError{Op: "proxyconnect", Net: "tcp", Err: refused.Err},
+			poolMode: true,
+			cooldown: true,
+		},
+		{
+			name:     "pool TLS fingerprint proxy dial refused",
+			err:      fmt.Errorf("connect to proxy: %w", refused.Err),
+			poolMode: true,
+			proxied:  true,
+			cooldown: true,
+		},
+	}
+
+	for _, platform := range []string{PlatformOpenAI, PlatformAnthropic, PlatformGemini} {
+		for _, test := range tests {
+			t.Run(platform+"/"+test.name, func(t *testing.T) {
+				account := &Account{
+					ID:          149,
+					Platform:    platform,
+					Type:        AccountTypeAPIKey,
+					Credentials: map[string]any{"pool_mode": test.poolMode},
+				}
+				if test.proxied {
+					proxyID := int64(13)
+					account.ProxyID = &proxyID
+					account.Proxy = &Proxy{ID: proxyID}
+				}
+				repo := &transportTempUnschedRepoStub{}
+				c := newTransportErrorTestGin(t)
+				ctx := context.Background()
+
+				var err error
+				switch platform {
+				case PlatformOpenAI:
+					svc := &OpenAIGatewayService{accountRepo: repo}
+					err = svc.handleOpenAIUpstreamTransportError(ctx, c, account, test.err, false)
+					require.Equal(t, test.cooldown, svc.isOpenAIAccountRuntimeBlocked(account))
+					if !test.cooldown {
+						_, _, eligible := classifyOpenAIAPIKeyHealthFailure(err)
+						require.False(t, eligible)
+					}
+				case PlatformAnthropic:
+					svc := &GatewayService{accountRepo: repo}
+					err = svc.handleUpstreamTransportError(ctx, c, account, test.err, OpsUpstreamErrorEvent{})
+				case PlatformGemini:
+					svc := &GeminiMessagesCompatService{accountRepo: repo}
+					err = svc.handleUpstreamTransportError(ctx, c, account, test.err)
+				}
+
+				var failover *UpstreamFailoverError
+				require.ErrorAs(t, err, &failover)
+				require.Equal(t, http.StatusBadGateway, failover.StatusCode)
+				require.True(t, failover.ShouldRetryNextAccount())
+				require.False(t, failover.RetryableOnSameAccount)
+				require.False(t, c.Writer.Written())
+				if test.cooldown {
+					require.Equal(t, 1, repo.calls)
+				} else {
+					require.Zero(t, repo.calls)
+				}
+			})
+		}
+	}
+}
+
 func TestHandleOpenAIUpstreamTransportError_DNSCooldownConfig(t *testing.T) {
 	transportErr := &url.Error{
 		Op:  "Post",
@@ -49,7 +138,7 @@ func TestHandleOpenAIUpstreamTransportError_DNSCooldownConfig(t *testing.T) {
 			Err: "no such host", Name: "chatgpt.com", Server: "127.0.0.11:53", IsNotFound: true,
 		}},
 	}
-	require.True(t, classifyUpstreamTransportError(transportErr).Persistent)
+	require.True(t, classifyUpstreamTransportError(transportErr, nil).Persistent)
 	for _, testCase := range []struct {
 		name     string
 		cfg      *config.Config

@@ -33,6 +33,7 @@ type upstreamTransportErrorClass struct {
 	// or DNS/routing failure. Such accounts should be temporarily unscheduled
 	// (and alerted on) instead of being repeatedly scheduled into hard failures.
 	Persistent bool
+	Scope      GatewayFailureScope
 }
 
 // persistentUpstreamTransportErrorMarkers are substrings (matched case-insensitively
@@ -65,9 +66,18 @@ var persistentUpstreamTransportErrorMarkers = []string{
 //     The network-layer string markers ("connection refused", "no route to host",
 //     "network is unreachable", "no such host") are kept as a cross-platform safety
 //     net even though the typed checks should cover them on modern Go+Linux.
-func classifyUpstreamTransportError(err error) upstreamTransportErrorClass {
+func classifyUpstreamTransportError(err error, account *Account) upstreamTransportErrorClass {
 	if err == nil {
 		return upstreamTransportErrorClass{}
+	}
+
+	// In pool mode, a refused direct TCP dial reflects upstream availability.
+	if account != nil && account.IsPoolMode() && account.ProxyID == nil {
+		var dialErr *net.OpError
+		if errors.As(err, &dialErr) && dialErr.Op == "dial" &&
+			strings.HasPrefix(dialErr.Net, "tcp") && errors.Is(dialErr, syscall.ECONNREFUSED) {
+			return upstreamTransportErrorClass{Scope: GatewayFailureScopeProvider}
+		}
 	}
 
 	// — Typed checks (preferred) ——————————————————————————————————————————————
@@ -150,13 +160,15 @@ func (s *OpenAIGatewayService) handleOpenAIUpstreamTransportError(ctx context.Co
 		return err
 	}
 
-	if classifyUpstreamTransportError(err).Persistent {
+	classification := classifyUpstreamTransportError(err, account)
+	if classification.Persistent {
 		s.tempUnscheduleOpenAITransportError(ctx, account, safeErr)
 	}
 
 	return &UpstreamFailoverError{
 		StatusCode:   http.StatusBadGateway,
 		ResponseBody: openAITransportFailoverBody,
+		Scope:        classification.Scope,
 	}
 }
 

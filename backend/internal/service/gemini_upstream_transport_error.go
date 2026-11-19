@@ -45,12 +45,14 @@ func (s *GeminiMessagesCompatService) handleUpstreamTransportError(ctx context.C
 		return err
 	}
 
-	if classifyUpstreamTransportError(err).Persistent {
+	classification := classifyUpstreamTransportError(err, account)
+	if classification.Persistent {
 		tempUnscheduleAccountForTransportError(ctx, s.accountRepo, account, safeErr)
 	}
 
 	return &UpstreamFailoverError{
 		StatusCode:   http.StatusBadGateway,
 		ResponseBody: geminiTransportFailoverBody,
+		Scope:        classification.Scope,
 	}
 }
