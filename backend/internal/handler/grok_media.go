@@ -509,6 +509,11 @@ func (h *OpenAIGatewayHandler) handleGrokMedia(c *gin.Context, endpoint service.
 		service.SetOpsLatencyMs(c, service.OpsResponseLatencyMsKey, responseLatencyMs)
 
 		if err != nil {
+			var validationErr *service.GrokMediaInputValidationError
+			if errors.As(err, &validationErr) {
+				h.errorResponse(c, http.StatusBadRequest, "invalid_request_error", validationErr.Error())
+				return
+			}
 			var hfsyErr *service.HFsyVideoUpstreamError
 			if endpoint.IsHFsyVideo() && errors.As(err, &hfsyErr) {
 				switch hfsyErr.StatusCode {
