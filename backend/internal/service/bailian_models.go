@@ -36,7 +36,7 @@ func (s *AccountTestService) fetchBailianVideoModels(ctx context.Context, accoun
 			return nil, nil, nil, err
 		}
 		req.Header.Set("Authorization", "Bearer "+key)
-		account.ApplyHeaderOverrides(req.Header)
+		account.ApplyHeaderOverrides(withoutHeaderOverrideRequestScope(req.Context()), req.Header)
 		body, err := s.readUpstreamModelsResponse(req, account)
 		if err != nil {
 			return nil, nil, req, err

@@ -1031,7 +1031,7 @@ func (s *AccountTestService) buildUpstreamModelsRequest(ctx context.Context, acc
 		}
 		req.Header.Set("Authorization", "Bearer "+strings.TrimSpace(account.GetCredential("api_key")))
 		req.Header.Set("Accept", "application/json")
-		account.ApplyHeaderOverrides(req.Header)
+		account.ApplyHeaderOverrides(withoutHeaderOverrideRequestScope(req.Context()), req.Header)
 		return req, nil
 	case account.IsOpenAI() || account.IsMultiProtocolAPIKey():
 		// 多协议 API Key 供应商（国产厂商与聚合平台）复用 OpenAI /v1/models 探测。
@@ -1125,7 +1125,7 @@ func (s *AccountTestService) buildGrokUpstreamModelsRequest(ctx context.Context,
 			}
 		}
 	}
-	account.ApplyHeaderOverrides(req.Header)
+	account.ApplyHeaderOverrides(withoutHeaderOverrideRequestScope(req.Context()), req.Header)
 	return req, nil
 }
 
@@ -1196,7 +1196,7 @@ func (s *AccountTestService) buildAnthropicUpstreamModelsRequest(ctx context.Con
 		setAnthropicAPIKeyAuthHeader(req.Header, account, apiKeyAuthToken, normalizedBaseURL)
 	}
 	// 账号级请求头覆写：模型列表探测与真实转发保持一致的最终头
-	account.ApplyHeaderOverrides(req.Header)
+	account.ApplyHeaderOverrides(withoutHeaderOverrideRequestScope(req.Context()), req.Header)
 	return req, nil
 }
 
@@ -1278,7 +1278,7 @@ func buildOpenAIAPIKeyModelsRequest(ctx context.Context, account *Account, valid
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("Authorization", "Bearer "+apiKey)
 	// 账号级请求头覆写：模型列表探测与真实转发保持一致的最终头
-	account.ApplyHeaderOverrides(req.Header)
+	account.ApplyHeaderOverrides(withoutHeaderOverrideRequestScope(req.Context()), req.Header)
 	return req, nil
 }
 
@@ -1339,7 +1339,7 @@ func (s *AccountTestService) buildOpenAIOAuthUpstreamModelsRequest(ctx context.C
 	req.Header.Set("User-Agent", identity.userAgent)
 	req.Header.Set("Version", identity.version)
 	setOpenAIChatGPTAccountHeaders(req.Header, credentialAccount)
-	credentialAccount.ApplyHeaderOverrides(req.Header)
+	credentialAccount.ApplyHeaderOverrides(withoutHeaderOverrideRequestScope(req.Context()), req.Header)
 	enforceCodexIdentityHeadersWithUA(req.Header, credentialAccount.GetOpenAIUserAgent())
 	return req, nil
 }

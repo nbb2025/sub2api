@@ -213,7 +213,7 @@ func (s *OpenAIGatewayService) ForwardBailianVideo(ctx context.Context, c *gin.C
 	req.Header.Set("Authorization", "Bearer "+key)
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json")
-	account.ApplyHeaderOverrides(req.Header)
+	account.ApplyHeaderOverrides(req.Context(), req.Header)
 	if endpoint == BailianEndpointCreate {
 		req.Header.Set("X-DashScope-Async", "enable")
 		if bailianUsesOSS(body) {

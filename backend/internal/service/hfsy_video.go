@@ -196,7 +196,7 @@ func (s *OpenAIGatewayService) ForwardHFsyVideo(ctx context.Context, c *gin.Cont
 	if create {
 		req.Header.Set("Content-Type", "application/json")
 	}
-	account.ApplyHeaderOverrides(req.Header)
+	account.ApplyHeaderOverrides(req.Context(), req.Header)
 	proxyURL := ""
 	if account.ProxyID != nil && account.Proxy != nil {
 		proxyURL = account.Proxy.URL()
