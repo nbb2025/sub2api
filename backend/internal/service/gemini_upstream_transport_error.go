@@ -46,7 +46,7 @@ func (s *GeminiMessagesCompatService) handleUpstreamTransportError(ctx context.C
 	}
 
 	classification := classifyUpstreamTransportError(err, account)
-	if classification.Persistent {
+	if classification.Kind != upstreamTransportTransient {
 		tempUnscheduleAccountForTransportError(ctx, s.accountRepo, account, safeErr)
 	}
 
