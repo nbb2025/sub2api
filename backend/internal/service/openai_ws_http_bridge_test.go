@@ -2230,7 +2230,8 @@ func TestOpenAIWSHTTPBridgeKeepsContinuationFramesOnHTTPWithoutPreviousResponseI
 	require.Equal(t, "response.completed", gjson.GetBytes(firstTurnEvent, "type").String())
 	require.Equal(t, "resp_bridge_first", gjson.GetBytes(firstTurnEvent, "response.id").String())
 
-	writeMessage(`{"type":"response.create","model":"gpt-5.1","stream":false,"reasoning":{"effort":"xhigh"},"previous_response_id":"resp_bridge_first","input":[{"type":"function_call_output","call_id":"call_bridge_1","output":"ok"}]}`)
+	const browserContext = `{"type":"function_call_output","namespace":"agent","name":"browser_tabs","output":"<in-app-browser-context source=\"ambient-ui-state\">Browser fixture</in-app-browser-context>"}`
+	writeMessage(`{"type":"response.create","model":"gpt-5.1","stream":false,"reasoning":{"effort":"xhigh"},"previous_response_id":"resp_bridge_first","input":[{"type":"function_call_output","call_id":"call_bridge_1","output":"ok"},` + browserContext + `]}`)
 	secondTurnEvent := readMessage()
 	require.Equal(t, "response.completed", gjson.GetBytes(secondTurnEvent, "type").String())
 	require.Equal(t, "resp_bridge_second", gjson.GetBytes(secondTurnEvent, "response.id").String())
@@ -2247,12 +2248,15 @@ func TestOpenAIWSHTTPBridgeKeepsContinuationFramesOnHTTPWithoutPreviousResponseI
 	require.False(t, gjson.GetBytes(upstream.bodies[0], "previous_response_id").Exists())
 	require.False(t, gjson.GetBytes(upstream.bodies[1], "previous_response_id").Exists())
 	secondInput := gjson.GetBytes(upstream.bodies[1], "input").Array()
-	require.Len(t, secondInput, 3)
+	require.Len(t, secondInput, 4)
 	require.Equal(t, "first", secondInput[0].String())
 	require.Equal(t, "function_call", secondInput[1].Get("type").String())
 	require.Equal(t, "call_bridge_1", secondInput[1].Get("call_id").String())
 	require.Equal(t, "function_call_output", secondInput[2].Get("type").String())
 	require.Equal(t, "call_bridge_1", secondInput[2].Get("call_id").String())
+	require.Equal(t, "message", secondInput[3].Get("type").String())
+	require.Equal(t, "user", secondInput[3].Get("role").String())
+	require.Equal(t, `<external_browser_tabs><in-app-browser-context source="ambient-ui-state">Browser fixture</in-app-browser-context></external_browser_tabs>`, secondInput[3].Get("content.0.text").String())
 	// The bridge sends capped efforts while usage records each turn's own inbound selection.
 	for _, body := range upstream.bodies {
 		require.Equal(t, "medium", gjson.GetBytes(body, "reasoning.effort").String())

@@ -625,6 +625,13 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 					bridgeAccountFailoverInput, _ = stripOpenAIInvalidEncryptedContentFromReplayItems(bridgeAccountFailoverInput, invalidDigests)
 				}
 			}
+			// Normalize the browser snapshot before checking tool coverage or building replay history.
+			if account.IsOpenAI() {
+				if normalized, changed := NormalizeCodexBrowserTabs(currentBridgePayload.payloadRaw); changed {
+					currentBridgePayload.payloadRaw = normalized
+					currentBridgePayload.payloadBytes = len(normalized)
+				}
+			}
 			bridgePayloadRaw := currentBridgePayload.payloadRaw
 			bridgePayloadBytes := currentBridgePayload.payloadBytes
 			toolOutputCoverage := AnalyzeToolCallOutputContextCoverageBytes(currentBridgePayload.payloadRaw)

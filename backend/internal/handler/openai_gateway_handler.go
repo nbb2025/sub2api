@@ -1777,7 +1777,7 @@ func containsCodexCallOutputLiterals(body []byte, toolNames []string) bool {
 }
 
 func normalizeCodexCallOutputBootstrap(body []byte, isCandidate func(map[string]any) bool, allowHistoricalContext bool) ([]byte, bool) {
-	if !hasUniqueJSONMembers(body) {
+	if !service.HasUniqueJSONMembers(body) {
 		return body, false
 	}
 	decoder := json.NewDecoder(bytes.NewReader(body))
@@ -1857,60 +1857,6 @@ func normalizeCodexCallOutputBootstrap(body []byte, isCandidate func(map[string]
 		return body, false
 	}
 	return normalized, true
-}
-
-func hasUniqueJSONMembers(body []byte) bool {
-	decoder := json.NewDecoder(bytes.NewReader(body))
-	if !consumeUniqueJSONValue(decoder) {
-		return false
-	}
-	_, err := decoder.Token()
-	return err == io.EOF
-}
-
-func consumeUniqueJSONValue(decoder *json.Decoder) bool {
-	token, err := decoder.Token()
-	if err != nil {
-		return false
-	}
-	delim, ok := token.(json.Delim)
-	if !ok {
-		return true
-	}
-
-	switch delim {
-	case '{':
-		members := make(map[string]struct{})
-		for decoder.More() {
-			keyToken, err := decoder.Token()
-			if err != nil {
-				return false
-			}
-			key, ok := keyToken.(string)
-			if !ok {
-				return false
-			}
-			if _, duplicate := members[key]; duplicate {
-				return false
-			}
-			members[key] = struct{}{}
-			if !consumeUniqueJSONValue(decoder) {
-				return false
-			}
-		}
-		end, err := decoder.Token()
-		return err == nil && end == json.Delim('}')
-	case '[':
-		for decoder.More() {
-			if !consumeUniqueJSONValue(decoder) {
-				return false
-			}
-		}
-		end, err := decoder.Token()
-		return err == nil && end == json.Delim(']')
-	default:
-		return false
-	}
 }
 
 func isResponsesCallOutputType(typ string) bool {

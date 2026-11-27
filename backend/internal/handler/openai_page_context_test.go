@@ -54,6 +54,29 @@ func TestNormalizeCodexPageContextFirstMessage(t *testing.T) {
 	require.Equal(t, got, again)
 }
 
+func TestNormalizeCodexBrowserTabsForHTTP(t *testing.T) {
+	const browserContext = `<in-app-browser-context source="ambient-ui-state">Browser fixture</in-app-browser-context>`
+	body := pageContextRequest(t,
+		pageContextItem("browser_tabs", browserContext),
+		pageContextItem("codex_apps_open_page", `{"page_id":null}`),
+		map[string]any{"type": "function_call", "call_id": "call_real", "name": "read_file", "arguments": "{}"},
+		map[string]any{"type": "function_call_output", "call_id": "call_real", "output": "sample result"},
+	)
+
+	got, changed := normalizeCodexUntrustedContext(body)
+	require.True(t, changed)
+	handler := &OpenAIGatewayHandler{}
+	ctx, _ := gin.CreateTestContext(httptest.NewRecorder())
+	require.True(t, handler.validateFunctionCallOutputRequest(ctx, got, zap.NewNop()))
+	require.Equal(t, "message", gjson.GetBytes(got, "input.0.type").String())
+	require.Equal(t, "user", gjson.GetBytes(got, "input.0.role").String())
+	require.Equal(t, "<external_browser_tabs>"+browserContext+"</external_browser_tabs>", gjson.GetBytes(got, "input.0.content.0.text").String())
+	require.Equal(t, "message", gjson.GetBytes(got, "input.1.type").String())
+	for _, path := range []string{"input.2", "input.3"} {
+		require.JSONEq(t, gjson.GetBytes(body, path).Raw, gjson.GetBytes(got, path).Raw)
+	}
+}
+
 var codexTextContextNamesForTest = []string{"browser_info", "terminal_info", "goal_objective", "untrusted_context", "untrusted_content", "ide_context", "proposed_plan"}
 
 func TestNormalizeCodexTerminalInfoIssue8991(t *testing.T) {
